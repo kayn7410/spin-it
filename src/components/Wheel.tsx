@@ -8,6 +8,8 @@ type Props = {
   spinning: boolean;
   setSpinning: (v: boolean) => void;
   centerImage?: string;
+  /** Spin animation duration in seconds (default 5). */
+  spinDurationSec?: number;
 };
 
 const SLICE_COLORS = [
@@ -24,7 +26,7 @@ const SLICE_COLORS = [
 // Idle drift: slow continuous rotation while not spinning (deg/sec).
 const IDLE_DEG_PER_SEC = 8;
 
-export function Wheel({ entries, onResult, spinning, setSpinning, centerImage }: Props) {
+export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, spinDurationSec = 5 }: Props) {
   const [rotation, setRotation] = useState(0);
   const [transitioning, setTransitioning] = useState(false);
   const rafRef = useRef<number | null>(null);
@@ -102,7 +104,7 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage }:
       setSpinning(false);
       setTransitioning(false);
       onResult(entries[winnerIdx]);
-    }, 5200);
+    }, spinDurationSec * 1000 + 200);
   }
 
   if (slices.length === 0) {
@@ -140,7 +142,7 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage }:
         style={{
           transform: `rotate(${rotation}deg)`,
           transition: transitioning
-            ? "transform 5s cubic-bezier(0.17, 0.67, 0.21, 1)"
+            ? `transform ${spinDurationSec}s cubic-bezier(0.17, 0.67, 0.21, 1)`
             : "none",
         }}
       >
