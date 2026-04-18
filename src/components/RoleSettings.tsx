@@ -156,6 +156,35 @@ export function RoleSettings({
 
       <Separator />
 
+      {/* Spin duration */}
+      <section className="space-y-2">
+        <Label htmlFor="spin-duration" className="text-base">
+          Spin duration
+        </Label>
+        <p className="text-xs text-muted-foreground">
+          How long the wheel takes to land on a winner.
+        </p>
+        <div className="flex items-center gap-3">
+          <input
+            id="spin-duration"
+            type="range"
+            min={1}
+            max={20}
+            step={1}
+            value={duration}
+            onChange={(e) => setDuration(Number(e.target.value))}
+            onMouseUp={() => onSaveSpinDuration(duration)}
+            onTouchEnd={() => onSaveSpinDuration(duration)}
+            className="flex-1 accent-[var(--primary)]"
+          />
+          <span className="w-16 text-right text-sm font-medium tabular-nums">
+            {duration}s
+          </span>
+        </div>
+      </section>
+
+      <Separator />
+
       {/* Role weights */}
       <section className="space-y-2">
         <Label>Role weights (by Discord role ID)</Label>
