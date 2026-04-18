@@ -9,6 +9,7 @@ const DEFAULT_DATA: WheelData = {
   centerImage: "",
   imageBonusEnabled: false,
   imageBonusPerImage: 5,
+  spinDurationSec: 5,
 };
 
 let memoryCache: WheelData | null = null;
@@ -66,6 +67,7 @@ export function readData(): WheelData {
         centerImage: parsed.centerImage ?? "",
         imageBonusEnabled: parsed.imageBonusEnabled ?? false,
         imageBonusPerImage: parsed.imageBonusPerImage ?? 5,
+        spinDurationSec: parsed.spinDurationSec ?? 5,
       };
     } catch {
       // fall through to memory
@@ -274,4 +276,23 @@ export function setImageBonus(opts: { enabled?: boolean; perImage?: number }): v
     data.imageBonusPerImage = Math.max(1, Math.floor(opts.perImage));
   }
   writeData(data);
+}
+
+export function setSpinDuration(seconds: number): void {
+  const data = readData();
+  data.spinDurationSec = Math.min(20, Math.max(1, Math.round(seconds)));
+  writeData(data);
+}
+
+/** Fisher–Yates shuffle of the entries array. */
+export function shuffleEntries(): Entry[] {
+  const data = readData();
+  const arr = data.entries.slice();
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  data.entries = arr;
+  writeData(data);
+  return arr;
 }
