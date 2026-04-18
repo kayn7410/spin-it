@@ -182,7 +182,7 @@ function Home() {
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6">
           <div>
             <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
-              🎡 Wheel of Names
+              🎡 Wheel of Giveaways
             </h1>
             <p className="text-xs text-muted-foreground sm:text-sm">
               ​
