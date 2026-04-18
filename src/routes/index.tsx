@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Settings } from "lucide-react";
-import type { Entry, RoleWeight, WheelData } from "@/lib/types";
+import type { Entry, WheelData } from "@/lib/types";
 import { Wheel } from "@/components/Wheel";
 import { EntryList } from "@/components/EntryList";
 import { RoleSettings } from "@/components/RoleSettings";
@@ -13,6 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/")({
   component: Home,
@@ -34,16 +35,20 @@ function Home() {
   const [winner, setWinner] = useState<Entry | null>(null);
   const [showWinner, setShowWinner] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [canUndo, setCanUndo] = useState(false);
   const pollRef = useRef<number | null>(null);
 
   const refresh = useCallback(async () => {
-    const res = await fetch("/api/state");
-    if (res.ok) setData(await res.json());
+    try {
+      const res = await fetch("/api/state");
+      if (res.ok) setData(await res.json());
+    } catch {
+      // ignore transient
+    }
   }, []);
 
   useEffect(() => {
     refresh();
-    // Poll every 3s so Discord-submitted names show up
     pollRef.current = window.setInterval(() => {
       if (!spinning) refresh();
     }, 3000);
@@ -61,13 +66,49 @@ function Home() {
     await refresh();
   }
 
+  async function addEntriesBulk(names: string[], weight: number) {
+    await fetch("/api/entries", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ names, weight }),
+    });
+    toast.success(`Added ${names.length} entries`);
+    await refresh();
+  }
+
+  async function updateEntry(id: string, patch: { name?: string; weight?: number }) {
+    await fetch("/api/entries", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, ...patch }),
+    });
+    await refresh();
+  }
+
   async function removeEntry(id: string) {
     await fetch(`/api/entries?id=${encodeURIComponent(id)}`, { method: "DELETE" });
     await refresh();
   }
 
   async function clearEntries() {
-    await fetch("/api/entries?all=1", { method: "DELETE" });
+    const res = await fetch("/api/entries?all=1", { method: "DELETE" });
+    const body = await res.json().catch(() => ({}));
+    if (body?.clearedCount > 0) {
+      setCanUndo(true);
+      toast(`Cleared ${body.clearedCount} entries`, {
+        action: { label: "Undo", onClick: () => undoClear() },
+      });
+    }
+    await refresh();
+  }
+
+  async function undoClear() {
+    const res = await fetch("/api/entries/restore", { method: "POST" });
+    const body = await res.json().catch(() => ({}));
+    if (body?.restored > 0) {
+      toast.success(`Restored ${body.restored} entries`);
+    }
+    setCanUndo(false);
     await refresh();
   }
 
@@ -94,6 +135,27 @@ function Home() {
     await refresh();
   }
 
+  async function saveCenterImage(centerImage: string) {
+    await fetch("/api/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ centerImage }),
+    });
+    await refresh();
+  }
+
+  async function saveImageBonus(opts: {
+    imageBonusEnabled?: boolean;
+    imageBonusPerImage?: number;
+  }) {
+    await fetch("/api/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(opts),
+    });
+    await refresh();
+  }
+
   function handleResult(w: Entry) {
     setWinner(w);
     setShowWinner(true);
@@ -108,6 +170,9 @@ function Home() {
   const entries = data?.entries ?? [];
   const roleWeights = data?.roleWeights ?? [];
   const channelId = data?.channelId ?? "";
+  const centerImage = data?.centerImage ?? "";
+  const imageBonusEnabled = data?.imageBonusEnabled ?? false;
+  const imageBonusPerImage = data?.imageBonusPerImage ?? 5;
 
   return (
     <div className="min-h-screen bg-background">
@@ -123,11 +188,7 @@ function Home() {
               Self-hosted · Discord-aware · Weighted entries
             </p>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowSettings(true)}
-          >
+          <Button variant="outline" size="sm" onClick={() => setShowSettings(true)}>
             <Settings className="mr-2 h-4 w-4" />
             Settings
           </Button>
@@ -141,6 +202,7 @@ function Home() {
             onResult={handleResult}
             spinning={spinning}
             setSpinning={setSpinning}
+            centerImage={centerImage}
           />
           <p className="text-center text-sm text-muted-foreground">
             Total weight:{" "}
@@ -156,8 +218,12 @@ function Home() {
           <EntryList
             entries={entries}
             onAdd={addEntry}
+            onAddBulk={addEntriesBulk}
+            onUpdate={updateEntry}
             onRemove={removeEntry}
             onClear={clearEntries}
+            onUndoClear={undoClear}
+            canUndo={canUndo}
           />
         </aside>
       </main>
@@ -187,16 +253,21 @@ function Home() {
       </Dialog>
 
       <Dialog open={showSettings} onOpenChange={setShowSettings}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Settings</DialogTitle>
           </DialogHeader>
           <RoleSettings
             roleWeights={roleWeights}
             channelId={channelId}
+            centerImage={centerImage}
+            imageBonusEnabled={imageBonusEnabled}
+            imageBonusPerImage={imageBonusPerImage}
             onSaveRole={saveRole}
             onDeleteRole={deleteRole}
             onSaveChannel={saveChannel}
+            onSaveCenterImage={saveCenterImage}
+            onSaveImageBonus={saveImageBonus}
           />
         </DialogContent>
       </Dialog>

@@ -64,6 +64,14 @@ client.on(Events.MessageCreate, async (msg) => {
         ?.filter((r) => r.name !== "@everyone")
         ?.map((r) => r.name) ?? [];
 
+    // Count image attachments (server decides whether bonus is applied).
+    const attachmentCount = msg.attachments
+      ? [...msg.attachments.values()].filter((a) => {
+          const ct = (a.contentType || "").toLowerCase();
+          return ct.startsWith("image/");
+        }).length
+      : 0;
+
     const res = await fetch(`${API_URL}/api/discord/submit`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -71,6 +79,7 @@ client.on(Events.MessageCreate, async (msg) => {
         name: name.slice(0, 64),
         discordUserId: msg.author.id,
         roles: roleNames,
+        attachmentCount,
       }),
     });
 
