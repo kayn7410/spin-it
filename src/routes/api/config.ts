@@ -3,7 +3,6 @@ import { z } from "zod";
 import {
   deleteRoleWeight,
   setCenterImage,
-  setChannelId,
   setImageBonus,
   upsertRoleWeight,
 } from "@/server/store";
@@ -18,10 +17,6 @@ const RoleSchema = z.object({
   id: z.string().optional(),
   role: z.string().min(1).max(100),
   weight: z.number().int().min(1).max(1000),
-});
-
-const ChannelSchema = z.object({
-  channelId: z.string().max(64),
 });
 
 // Center image as data URL (cap ~2 MB raw → ~2.7 MB base64).
@@ -48,12 +43,6 @@ export const Route = createFileRoute("/api/config")({
       POST: async ({ request }: { request: Request }) => {
         const body = await request.json().catch(() => null);
         if (body && typeof body === "object") {
-          if ("channelId" in body) {
-            const parsed = ChannelSchema.safeParse(body);
-            if (!parsed.success) return json({ error: "Invalid input" }, 400);
-            setChannelId(parsed.data.channelId);
-            return json({ ok: true });
-          }
           if ("centerImage" in body) {
             const parsed = CenterImageSchema.safeParse(body);
             if (!parsed.success) return json({ error: "Invalid input" }, 400);
