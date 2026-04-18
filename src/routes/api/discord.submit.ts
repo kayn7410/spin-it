@@ -18,7 +18,7 @@ export const Route = createFileRoute("/api/discord/submit")({
   server: {
     handlers: {
       OPTIONS: async () => new Response(null, { status: 204, headers: cors }),
-      POST: async ({ request }) => {
+      POST: async ({ request }: { request: Request }) => {
         const body = await request.json().catch(() => null);
         const parsed = Schema.safeParse(body);
         if (!parsed.success) {

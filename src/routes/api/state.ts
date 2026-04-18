@@ -20,4 +20,4 @@ export const Route = createFileRoute("/api/state")({
       },
     },
   },
-});
+} as any);

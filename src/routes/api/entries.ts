@@ -17,7 +17,7 @@ export const Route = createFileRoute("/api/entries")({
   server: {
     handlers: {
       OPTIONS: async () => new Response(null, { status: 204, headers: cors }),
-      POST: async ({ request }) => {
+      POST: async ({ request }: { request: Request }) => {
         const body = await request.json().catch(() => null);
         const parsed = PostSchema.safeParse(body);
         if (!parsed.success) {
@@ -32,7 +32,7 @@ export const Route = createFileRoute("/api/entries")({
           headers: { "Content-Type": "application/json", ...cors },
         });
       },
-      DELETE: async ({ request }) => {
+      DELETE: async ({ request }: { request: Request }) => {
         const url = new URL(request.url);
         if (url.searchParams.get("all") === "1") {
           clearEntries();

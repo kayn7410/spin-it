@@ -22,7 +22,7 @@ export const Route = createFileRoute("/api/config")({
   server: {
     handlers: {
       OPTIONS: async () => new Response(null, { status: 204, headers: cors }),
-      POST: async ({ request }) => {
+      POST: async ({ request }: { request: Request }) => {
         const body = await request.json().catch(() => null);
         // Determine action: role upsert or channel set
         if (body && typeof body === "object" && "channelId" in body) {
@@ -52,7 +52,7 @@ export const Route = createFileRoute("/api/config")({
           headers: { "Content-Type": "application/json", ...cors },
         });
       },
-      DELETE: async ({ request }) => {
+      DELETE: async ({ request }: { request: Request }) => {
         const url = new URL(request.url);
         const id = url.searchParams.get("id");
         if (!id) {
