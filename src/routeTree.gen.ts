@@ -10,33 +10,89 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ApiStateRouteImport } from './routes/api/state'
+import { Route as ApiEntriesRouteImport } from './routes/api/entries'
+import { Route as ApiConfigRouteImport } from './routes/api/config'
+import { Route as ApiDiscordSubmitRouteImport } from './routes/api/discord.submit'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiStateRoute = ApiStateRouteImport.update({
+  id: '/api/state',
+  path: '/api/state',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiEntriesRoute = ApiEntriesRouteImport.update({
+  id: '/api/entries',
+  path: '/api/entries',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiConfigRoute = ApiConfigRouteImport.update({
+  id: '/api/config',
+  path: '/api/config',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiDiscordSubmitRoute = ApiDiscordSubmitRouteImport.update({
+  id: '/api/discord/submit',
+  path: '/api/discord/submit',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/api/config': typeof ApiConfigRoute
+  '/api/entries': typeof ApiEntriesRoute
+  '/api/state': typeof ApiStateRoute
+  '/api/discord/submit': typeof ApiDiscordSubmitRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/api/config': typeof ApiConfigRoute
+  '/api/entries': typeof ApiEntriesRoute
+  '/api/state': typeof ApiStateRoute
+  '/api/discord/submit': typeof ApiDiscordSubmitRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/api/config': typeof ApiConfigRoute
+  '/api/entries': typeof ApiEntriesRoute
+  '/api/state': typeof ApiStateRoute
+  '/api/discord/submit': typeof ApiDiscordSubmitRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/api/config'
+    | '/api/entries'
+    | '/api/state'
+    | '/api/discord/submit'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/api/config'
+    | '/api/entries'
+    | '/api/state'
+    | '/api/discord/submit'
+  id:
+    | '__root__'
+    | '/'
+    | '/api/config'
+    | '/api/entries'
+    | '/api/state'
+    | '/api/discord/submit'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ApiConfigRoute: typeof ApiConfigRoute
+  ApiEntriesRoute: typeof ApiEntriesRoute
+  ApiStateRoute: typeof ApiStateRoute
+  ApiDiscordSubmitRoute: typeof ApiDiscordSubmitRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,12 +104,53 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/state': {
+      id: '/api/state'
+      path: '/api/state'
+      fullPath: '/api/state'
+      preLoaderRoute: typeof ApiStateRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/entries': {
+      id: '/api/entries'
+      path: '/api/entries'
+      fullPath: '/api/entries'
+      preLoaderRoute: typeof ApiEntriesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/config': {
+      id: '/api/config'
+      path: '/api/config'
+      fullPath: '/api/config'
+      preLoaderRoute: typeof ApiConfigRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/discord/submit': {
+      id: '/api/discord/submit'
+      path: '/api/discord/submit'
+      fullPath: '/api/discord/submit'
+      preLoaderRoute: typeof ApiDiscordSubmitRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ApiConfigRoute: ApiConfigRoute,
+  ApiEntriesRoute: ApiEntriesRoute,
+  ApiStateRoute: ApiStateRoute,
+  ApiDiscordSubmitRoute: ApiDiscordSubmitRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { createStart } from '@tanstack/react-start'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+  }
+}
