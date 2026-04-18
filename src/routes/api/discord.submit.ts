@@ -41,4 +41,4 @@ export const Route = createFileRoute("/api/discord/submit")({
       },
     },
   },
-});
+} as any);

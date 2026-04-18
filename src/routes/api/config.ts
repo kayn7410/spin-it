@@ -69,4 +69,4 @@ export const Route = createFileRoute("/api/config")({
       },
     },
   },
-});
+} as any);
