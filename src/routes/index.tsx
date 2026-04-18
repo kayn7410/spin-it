@@ -154,6 +154,21 @@ function Home() {
     setShowWinner(true);
   }
 
+  async function shuffleEntries() {
+    await fetch("/api/entries/shuffle", { method: "POST" });
+    toast.success("Entries shuffled");
+    await refresh();
+  }
+
+  async function saveSpinDuration(seconds: number) {
+    await fetch("/api/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ spinDurationSec: seconds }),
+    });
+    await refresh();
+  }
+
   async function removeWinnerAndClose() {
     if (winner) await removeEntry(winner.id);
     setShowWinner(false);
@@ -165,6 +180,7 @@ function Home() {
   const centerImage = data?.centerImage ?? "";
   const imageBonusEnabled = data?.imageBonusEnabled ?? false;
   const imageBonusPerImage = data?.imageBonusPerImage ?? 5;
+  const spinDurationSec = data?.spinDurationSec ?? 5;
 
   return (
     <div className="min-h-screen bg-background">
@@ -210,6 +226,7 @@ function Home() {
             spinning={spinning}
             setSpinning={setSpinning}
             centerImage={centerImage}
+            spinDurationSec={spinDurationSec}
           />
           <p className="text-center text-sm text-muted-foreground">
             Total weight:{" "}
@@ -230,6 +247,7 @@ function Home() {
             onRemove={removeEntry}
             onClear={clearEntries}
             onUndoClear={undoClear}
+            onShuffle={shuffleEntries}
             canUndo={canUndo}
           />
         </aside>
@@ -269,10 +287,12 @@ function Home() {
             centerImage={centerImage}
             imageBonusEnabled={imageBonusEnabled}
             imageBonusPerImage={imageBonusPerImage}
+            spinDurationSec={spinDurationSec}
             onSaveRole={saveRole}
             onDeleteRole={deleteRole}
             onSaveCenterImage={saveCenterImage}
             onSaveImageBonus={saveImageBonus}
+            onSaveSpinDuration={saveSpinDuration}
           />
         </DialogContent>
       </Dialog>

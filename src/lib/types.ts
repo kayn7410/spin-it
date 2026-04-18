@@ -28,4 +28,6 @@ export type WheelData = {
   imageBonusEnabled?: boolean;
   /** Entries per image attachment (default 5). */
   imageBonusPerImage?: number;
+  /** Spin duration in seconds (default 5). */
+  spinDurationSec?: number;
 };
