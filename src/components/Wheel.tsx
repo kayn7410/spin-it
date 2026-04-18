@@ -7,6 +7,7 @@ type Props = {
   onResult: (winner: Entry) => void;
   spinning: boolean;
   setSpinning: (v: boolean) => void;
+  centerImage?: string;
 };
 
 const SLICE_COLORS = [
@@ -20,9 +21,15 @@ const SLICE_COLORS = [
   "var(--wheel-8)",
 ];
 
-export function Wheel({ entries, onResult, spinning, setSpinning }: Props) {
+// Idle drift: slow continuous rotation while not spinning (deg/sec).
+const IDLE_DEG_PER_SEC = 8;
+
+export function Wheel({ entries, onResult, spinning, setSpinning, centerImage }: Props) {
   const [rotation, setRotation] = useState(0);
-  const wheelRef = useRef<SVGSVGElement>(null);
+  const [transitioning, setTransitioning] = useState(false);
+  const rafRef = useRef<number | null>(null);
+  const lastTickRef = useRef<number>(0);
+  const rotationRef = useRef(0);
 
   // Build weighted slices
   const slices = useMemo(() => {
@@ -42,11 +49,33 @@ export function Wheel({ entries, onResult, spinning, setSpinning }: Props) {
     });
   }, [entries]);
 
+  // Idle slow drift via requestAnimationFrame (only when not spinning).
+  useEffect(() => {
+    rotationRef.current = rotation;
+  }, [rotation]);
+
+  useEffect(() => {
+    if (spinning || transitioning || slices.length === 0) return;
+    lastTickRef.current = performance.now();
+    const step = (now: number) => {
+      const dt = (now - lastTickRef.current) / 1000;
+      lastTickRef.current = now;
+      rotationRef.current += IDLE_DEG_PER_SEC * dt;
+      setRotation(rotationRef.current);
+      rafRef.current = requestAnimationFrame(step);
+    };
+    rafRef.current = requestAnimationFrame(step);
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    };
+  }, [spinning, transitioning, slices.length]);
+
   function spin() {
-    if (spinning || slices.length === 0) return;
+    if (spinning || transitioning || slices.length === 0) return;
     setSpinning(true);
+    setTransitioning(true);
     const totalWeight = entries.reduce((s, e) => s + e.weight, 0);
-    // Pick winner by weight
     let r = Math.random() * totalWeight;
     let winnerIdx = 0;
     for (let i = 0; i < entries.length; i++) {
@@ -58,17 +87,20 @@ export function Wheel({ entries, onResult, spinning, setSpinning }: Props) {
     }
     const slice = slices[winnerIdx];
     const targetAngle = (slice.startAngle + slice.endAngle) / 2;
-    // Pointer is at top (12 o'clock = -90deg in SVG terms but we draw starting at top).
-    // We want target slice midpoint to land at 0deg from the pointer.
     const spins = 6 + Math.floor(Math.random() * 3);
-    const finalRotation = spins * 360 + (360 - targetAngle);
-    // Add jitter so it doesn't always land dead-center
+    // Normalize current rotation, build a forward target.
+    const current = rotationRef.current;
+    const currentMod = ((current % 360) + 360) % 360;
+    const desired = (360 - targetAngle) % 360;
+    const delta = ((desired - currentMod) + 360) % 360;
     const jitter = (Math.random() - 0.5) * ((slice.endAngle - slice.startAngle) * 0.6);
-    const newRotation = rotation + finalRotation + jitter;
+    const newRotation = current + spins * 360 + delta + jitter;
+    rotationRef.current = newRotation;
     setRotation(newRotation);
 
     setTimeout(() => {
       setSpinning(false);
+      setTransitioning(false);
       onResult(entries[winnerIdx]);
     }, 5200);
   }
@@ -87,6 +119,7 @@ export function Wheel({ entries, onResult, spinning, setSpinning }: Props) {
   const radius = 240;
   const cx = 250;
   const cy = 250;
+  const hubRadius = 60;
 
   return (
     <div className="relative aspect-square w-full max-w-[520px]">
@@ -102,18 +135,17 @@ export function Wheel({ entries, onResult, spinning, setSpinning }: Props) {
         aria-hidden
       />
       <svg
-        ref={wheelRef}
         viewBox="0 0 500 500"
         className="h-full w-full drop-shadow-2xl"
         style={{
           transform: `rotate(${rotation}deg)`,
-          transition: spinning
+          transition: transitioning
             ? "transform 5s cubic-bezier(0.17, 0.67, 0.21, 1)"
             : "none",
         }}
       >
         <circle cx={cx} cy={cy} r={radius + 6} fill="var(--card)" />
-        {slices.map((s, i) => {
+        {slices.map((s) => {
           const startRad = ((s.startAngle - 90) * Math.PI) / 180;
           const endRad = ((s.endAngle - 90) * Math.PI) / 180;
           const x1 = cx + radius * Math.cos(startRad);
@@ -123,7 +155,6 @@ export function Wheel({ entries, onResult, spinning, setSpinning }: Props) {
           const largeArc = s.endAngle - s.startAngle > 180 ? 1 : 0;
           const path = `M ${cx} ${cy} L ${x1} ${y1} A ${radius} ${radius} 0 ${largeArc} 1 ${x2} ${y2} Z`;
 
-          // Label position
           const midAngle = (s.startAngle + s.endAngle) / 2;
           const midRad = ((midAngle - 90) * Math.PI) / 180;
           const labelR = radius * 0.65;
@@ -154,8 +185,31 @@ export function Wheel({ entries, onResult, spinning, setSpinning }: Props) {
             </g>
           );
         })}
-        {/* Center hub */}
-        <circle cx={cx} cy={cy} r="38" fill="var(--card)" stroke="var(--primary)" strokeWidth="4" />
+        {/* Center hub with optional image */}
+        <defs>
+          <clipPath id="wheel-center-clip">
+            <circle cx={cx} cy={cy} r={hubRadius - 4} />
+          </clipPath>
+        </defs>
+        <circle
+          cx={cx}
+          cy={cy}
+          r={hubRadius}
+          fill="var(--card)"
+          stroke="var(--primary)"
+          strokeWidth="4"
+        />
+        {centerImage && (
+          <image
+            href={centerImage}
+            x={cx - (hubRadius - 4)}
+            y={cy - (hubRadius - 4)}
+            width={(hubRadius - 4) * 2}
+            height={(hubRadius - 4) * 2}
+            clipPath="url(#wheel-center-clip)"
+            preserveAspectRatio="xMidYMid slice"
+          />
+        )}
       </svg>
 
       <button
@@ -163,13 +217,17 @@ export function Wheel({ entries, onResult, spinning, setSpinning }: Props) {
         disabled={spinning}
         className={cn(
           "absolute left-1/2 top-1/2 z-20 -translate-x-1/2 -translate-y-1/2 rounded-full",
-          "h-20 w-20 bg-primary text-primary-foreground font-bold text-base shadow-lg",
+          "h-20 w-20 font-bold text-base shadow-lg",
           "transition-transform hover:scale-105 active:scale-95",
           "disabled:opacity-60 disabled:hover:scale-100",
+          centerImage
+            ? "bg-primary/0 text-primary-foreground/0 hover:bg-primary/20 hover:text-primary-foreground"
+            : "bg-primary text-primary-foreground",
         )}
         aria-label="Spin the wheel"
+        title="Spin"
       >
-        {spinning ? "..." : "SPIN"}
+        {!centerImage && (spinning ? "..." : "SPIN")}
       </button>
     </div>
   );
