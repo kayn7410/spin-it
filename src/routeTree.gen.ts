@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiStateRouteImport } from './routes/api/state'
 import { Route as ApiEntriesRouteImport } from './routes/api/entries'
 import { Route as ApiConfigRouteImport } from './routes/api/config'
+import { Route as ApiEntriesShuffleRouteImport } from './routes/api/entries.shuffle'
 import { Route as ApiEntriesRestoreRouteImport } from './routes/api/entries.restore'
 import { Route as ApiDiscordSubmitRouteImport } from './routes/api/discord.submit'
 
@@ -36,6 +37,11 @@ const ApiConfigRoute = ApiConfigRouteImport.update({
   path: '/api/config',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiEntriesShuffleRoute = ApiEntriesShuffleRouteImport.update({
+  id: '/shuffle',
+  path: '/shuffle',
+  getParentRoute: () => ApiEntriesRoute,
+} as any)
 const ApiEntriesRestoreRoute = ApiEntriesRestoreRouteImport.update({
   id: '/restore',
   path: '/restore',
@@ -54,6 +60,7 @@ export interface FileRoutesByFullPath {
   '/api/state': typeof ApiStateRoute
   '/api/discord/submit': typeof ApiDiscordSubmitRoute
   '/api/entries/restore': typeof ApiEntriesRestoreRoute
+  '/api/entries/shuffle': typeof ApiEntriesShuffleRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -62,6 +69,7 @@ export interface FileRoutesByTo {
   '/api/state': typeof ApiStateRoute
   '/api/discord/submit': typeof ApiDiscordSubmitRoute
   '/api/entries/restore': typeof ApiEntriesRestoreRoute
+  '/api/entries/shuffle': typeof ApiEntriesShuffleRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -71,6 +79,7 @@ export interface FileRoutesById {
   '/api/state': typeof ApiStateRoute
   '/api/discord/submit': typeof ApiDiscordSubmitRoute
   '/api/entries/restore': typeof ApiEntriesRestoreRoute
+  '/api/entries/shuffle': typeof ApiEntriesShuffleRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -81,6 +90,7 @@ export interface FileRouteTypes {
     | '/api/state'
     | '/api/discord/submit'
     | '/api/entries/restore'
+    | '/api/entries/shuffle'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -89,6 +99,7 @@ export interface FileRouteTypes {
     | '/api/state'
     | '/api/discord/submit'
     | '/api/entries/restore'
+    | '/api/entries/shuffle'
   id:
     | '__root__'
     | '/'
@@ -97,6 +108,7 @@ export interface FileRouteTypes {
     | '/api/state'
     | '/api/discord/submit'
     | '/api/entries/restore'
+    | '/api/entries/shuffle'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -137,6 +149,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiConfigRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/entries/shuffle': {
+      id: '/api/entries/shuffle'
+      path: '/shuffle'
+      fullPath: '/api/entries/shuffle'
+      preLoaderRoute: typeof ApiEntriesShuffleRouteImport
+      parentRoute: typeof ApiEntriesRoute
+    }
     '/api/entries/restore': {
       id: '/api/entries/restore'
       path: '/restore'
@@ -156,10 +175,12 @@ declare module '@tanstack/react-router' {
 
 interface ApiEntriesRouteChildren {
   ApiEntriesRestoreRoute: typeof ApiEntriesRestoreRoute
+  ApiEntriesShuffleRoute: typeof ApiEntriesShuffleRoute
 }
 
 const ApiEntriesRouteChildren: ApiEntriesRouteChildren = {
   ApiEntriesRestoreRoute: ApiEntriesRestoreRoute,
+  ApiEntriesShuffleRoute: ApiEntriesShuffleRoute,
 }
 
 const ApiEntriesRouteWithChildren = ApiEntriesRoute._addFileChildren(
@@ -176,3 +197,12 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { createStart } from '@tanstack/react-start'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+  }
+}
