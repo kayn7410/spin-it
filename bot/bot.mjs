@@ -16,7 +16,7 @@
 //   - The full message content (trimmed, max 64 chars) is used as the name.
 //   - Each user can only submit ONCE; later messages from same user are ignored.
 //   - Entry weight is decided by the user's highest-weighted role
-//     (configured in the web UI Settings).
+//     (role IDs configured in the web UI Settings).
 
 import { Client, GatewayIntentBits, Partials, Events } from "discord.js";
 import "dotenv/config";
@@ -58,11 +58,11 @@ client.on(Events.MessageCreate, async (msg) => {
     const name = (msg.content || "").trim();
     if (!name) return;
 
-    // Resolve roles by name (skip @everyone here, the API treats it as default)
-    const roleNames =
+    // Send role IDs (the web UI maps role IDs → weight). Skip @everyone.
+    const roleIds =
       msg.member?.roles?.cache
         ?.filter((r) => r.name !== "@everyone")
-        ?.map((r) => r.name) ?? [];
+        ?.map((r) => r.id) ?? [];
 
     // Count image attachments (server decides whether bonus is applied).
     const attachmentCount = msg.attachments
@@ -78,7 +78,7 @@ client.on(Events.MessageCreate, async (msg) => {
       body: JSON.stringify({
         name: name.slice(0, 64),
         discordUserId: msg.author.id,
-        roles: roleNames,
+        roles: roleIds,
         attachmentCount,
       }),
     });
