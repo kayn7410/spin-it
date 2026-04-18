@@ -56,4 +56,4 @@ export const Route = createFileRoute("/api/entries")({
       },
     },
   },
-});
+} as any);
