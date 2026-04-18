@@ -185,7 +185,7 @@ function Home() {
               🎡 Wheel of Names
             </h1>
             <p className="text-xs text-muted-foreground sm:text-sm">
-              Self-hosted · Discord-aware · Weighted entries
+              ​
             </p>
           </div>
           <Button variant="outline" size="sm" onClick={() => setShowSettings(true)}>
