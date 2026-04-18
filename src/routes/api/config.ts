@@ -63,7 +63,10 @@ export const Route = createFileRoute("/api/config")({
           if ("imageBonusEnabled" in body || "imageBonusPerImage" in body) {
             const parsed = ImageBonusSchema.safeParse(body);
             if (!parsed.success) return json({ error: "Invalid input" }, 400);
-            setImageBonus(parsed.data);
+            setImageBonus({
+              enabled: parsed.data.imageBonusEnabled,
+              perImage: parsed.data.imageBonusPerImage,
+            });
             return json({ ok: true });
           }
         }
