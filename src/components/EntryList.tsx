@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Trash2, X, Pencil, Check, Undo2 } from "lucide-react";
+import { Trash2, X, Pencil, Check, Undo2, Shuffle } from "lucide-react";
 import type { Entry } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +16,7 @@ type Props = {
   onRemove: (id: string) => Promise<void>;
   onClear: () => Promise<void>;
   onUndoClear: () => Promise<void>;
+  onShuffle: () => Promise<void>;
   canUndo: boolean;
 };
 
@@ -27,6 +28,7 @@ export function EntryList({
   onRemove,
   onClear,
   onUndoClear,
+  onShuffle,
   canUndo,
 }: Props) {
   const [name, setName] = useState("");
@@ -63,6 +65,17 @@ export function EntryList({
             <Button variant="outline" size="sm" onClick={onUndoClear}>
               <Undo2 className="mr-1 h-4 w-4" />
               Undo clear
+            </Button>
+          )}
+          {entries.length > 1 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onShuffle}
+              title="Shuffle entries"
+            >
+              <Shuffle className="mr-1 h-4 w-4" />
+              Shuffle
             </Button>
           )}
           {entries.length > 0 && (
