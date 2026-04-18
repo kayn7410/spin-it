@@ -4,6 +4,7 @@ import {
   deleteRoleWeight,
   setCenterImage,
   setImageBonus,
+  setSpinDuration,
   upsertRoleWeight,
 } from "@/server/store";
 
@@ -27,6 +28,10 @@ const CenterImageSchema = z.object({
 const ImageBonusSchema = z.object({
   imageBonusEnabled: z.boolean().optional(),
   imageBonusPerImage: z.number().int().min(1).max(1000).optional(),
+});
+
+const SpinDurationSchema = z.object({
+  spinDurationSec: z.number().min(1).max(20),
 });
 
 function json(body: unknown, status = 200) {
@@ -56,6 +61,12 @@ export const Route = createFileRoute("/api/config")({
               enabled: parsed.data.imageBonusEnabled,
               perImage: parsed.data.imageBonusPerImage,
             });
+            return json({ ok: true });
+          }
+          if ("spinDurationSec" in body) {
+            const parsed = SpinDurationSchema.safeParse(body);
+            if (!parsed.success) return json({ error: "Invalid input" }, 400);
+            setSpinDuration(parsed.data.spinDurationSec);
             return json({ ok: true });
           }
         }
