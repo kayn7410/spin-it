@@ -4,8 +4,6 @@ const DEFAULT_DATA: WheelData = {
   entries: [],
   roleWeights: [
     { id: "default-everyone", role: "@everyone", weight: 1 },
-    { id: "default-subscriber", role: "Subscriber", weight: 10 },
-    { id: "default-vip", role: "VIP", weight: 25 },
   ],
   channelId: "",
   centerImage: "",

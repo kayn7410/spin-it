@@ -93,7 +93,7 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage }:
     const currentMod = ((current % 360) + 360) % 360;
     const desired = (360 - targetAngle) % 360;
     const delta = ((desired - currentMod) + 360) % 360;
-    const jitter = (Math.random() - 0.5) * ((slice.endAngle - slice.startAngle) * 0.6);
+    const jitter = (Math.random() - 0.5) * ((slice.endAngle - slice.startAngle) * 0.4);
     const newRotation = current + spins * 360 + delta + jitter;
     rotationRef.current = newRotation;
     setRotation(newRotation);

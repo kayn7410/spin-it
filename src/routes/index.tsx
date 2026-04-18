@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Settings } from "lucide-react";
+import { Settings, Moon, Sun } from "lucide-react";
+import { useTheme } from "@/hooks/use-theme";
 import type { Entry, WheelData } from "@/lib/types";
 import { Wheel } from "@/components/Wheel";
 import { EntryList } from "@/components/EntryList";
@@ -30,6 +31,7 @@ export const Route = createFileRoute("/")({
 });
 
 function Home() {
+  const { theme, toggle: toggleTheme } = useTheme();
   const [data, setData] = useState<WheelData | null>(null);
   const [spinning, setSpinning] = useState(false);
   const [winner, setWinner] = useState<Entry | null>(null);
@@ -126,15 +128,6 @@ function Home() {
     await refresh();
   }
 
-  async function saveChannel(channelId: string) {
-    await fetch("/api/config", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ channelId }),
-    });
-    await refresh();
-  }
-
   async function saveCenterImage(centerImage: string) {
     await fetch("/api/config", {
       method: "POST",
@@ -169,7 +162,6 @@ function Home() {
 
   const entries = data?.entries ?? [];
   const roleWeights = data?.roleWeights ?? [];
-  const channelId = data?.channelId ?? "";
   const centerImage = data?.centerImage ?? "";
   const imageBonusEnabled = data?.imageBonusEnabled ?? false;
   const imageBonusPerImage = data?.imageBonusPerImage ?? 5;
@@ -188,10 +180,25 @@ function Home() {
               ​
             </p>
           </div>
-          <Button variant="outline" size="sm" onClick={() => setShowSettings(true)}>
-            <Settings className="mr-2 h-4 w-4" />
-            Settings
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={toggleTheme}
+              aria-label="Toggle dark mode"
+              title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            >
+              {theme === "dark" ? (
+                <Sun className="h-4 w-4" />
+              ) : (
+                <Moon className="h-4 w-4" />
+              )}
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setShowSettings(true)}>
+              <Settings className="mr-2 h-4 w-4" />
+              Settings
+            </Button>
+          </div>
         </div>
       </header>
 
@@ -259,13 +266,11 @@ function Home() {
           </DialogHeader>
           <RoleSettings
             roleWeights={roleWeights}
-            channelId={channelId}
             centerImage={centerImage}
             imageBonusEnabled={imageBonusEnabled}
             imageBonusPerImage={imageBonusPerImage}
             onSaveRole={saveRole}
             onDeleteRole={deleteRole}
-            onSaveChannel={saveChannel}
             onSaveCenterImage={saveCenterImage}
             onSaveImageBonus={saveImageBonus}
           />

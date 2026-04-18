@@ -9,13 +9,11 @@ import { Separator } from "@/components/ui/separator";
 
 type Props = {
   roleWeights: RoleWeight[];
-  channelId: string;
   centerImage: string;
   imageBonusEnabled: boolean;
   imageBonusPerImage: number;
   onSaveRole: (rw: { id?: string; role: string; weight: number }) => Promise<void>;
   onDeleteRole: (id: string) => Promise<void>;
-  onSaveChannel: (channelId: string) => Promise<void>;
   onSaveCenterImage: (dataUrl: string) => Promise<void>;
   onSaveImageBonus: (opts: {
     imageBonusEnabled?: boolean;
@@ -25,19 +23,16 @@ type Props = {
 
 export function RoleSettings({
   roleWeights,
-  channelId,
   centerImage,
   imageBonusEnabled,
   imageBonusPerImage,
   onSaveRole,
   onDeleteRole,
-  onSaveChannel,
   onSaveCenterImage,
   onSaveImageBonus,
 }: Props) {
   const [newRole, setNewRole] = useState("");
   const [newWeight, setNewWeight] = useState(5);
-  const [channel, setChannel] = useState(channelId);
   const [perImage, setPerImage] = useState(imageBonusPerImage);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -109,27 +104,6 @@ export function RoleSettings({
 
       <Separator />
 
-      {/* Channel */}
-      <section className="space-y-2">
-        <Label htmlFor="channel">Discord channel ID</Label>
-        <div className="flex gap-2">
-          <Input
-            id="channel"
-            placeholder="e.g. 1234567890"
-            value={channel}
-            onChange={(e) => setChannel(e.target.value)}
-          />
-          <Button onClick={() => onSaveChannel(channel)} variant="secondary">
-            Save
-          </Button>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Bot only listens in this channel.
-        </p>
-      </section>
-
-      <Separator />
-
       {/* Image bonus */}
       <section className="space-y-3">
         <div className="flex items-start justify-between gap-4">
@@ -179,7 +153,12 @@ export function RoleSettings({
 
       {/* Role weights */}
       <section className="space-y-2">
-        <Label>Role weights</Label>
+        <Label>Role weights (by Discord role ID)</Label>
+        <p className="text-xs text-muted-foreground">
+          Paste the Discord role ID (right-click role → Copy Role ID with Developer Mode on).
+          Use <code className="rounded bg-muted px-1">@everyone</code> as the default for users
+          with no matching role.
+        </p>
         <ul className="space-y-2">
           {roleWeights.map((rw) => (
             <RoleRow
@@ -192,7 +171,7 @@ export function RoleSettings({
         </ul>
         <form onSubmit={add} className="mt-3 flex gap-2">
           <Input
-            placeholder="Role name (e.g. Subscriber)"
+            placeholder="Role ID (e.g. 1234567890123456789)"
             value={newRole}
             onChange={(e) => setNewRole(e.target.value)}
           />
@@ -227,7 +206,12 @@ function RoleRow({
   const dirty = role !== rw.role || weight !== rw.weight;
   return (
     <li className="flex items-center gap-2 rounded-md bg-muted/50 p-2">
-      <Input value={role} onChange={(e) => setRole(e.target.value)} className="flex-1" />
+      <Input
+        value={role}
+        onChange={(e) => setRole(e.target.value)}
+        className="flex-1 font-mono text-xs"
+        placeholder="Role ID or @everyone"
+      />
       <Input
         type="number"
         min={1}
