@@ -266,13 +266,11 @@ function Home() {
           </DialogHeader>
           <RoleSettings
             roleWeights={roleWeights}
-            channelId={channelId}
             centerImage={centerImage}
             imageBonusEnabled={imageBonusEnabled}
             imageBonusPerImage={imageBonusPerImage}
             onSaveRole={saveRole}
             onDeleteRole={deleteRole}
-            onSaveChannel={saveChannel}
             onSaveCenterImage={saveCenterImage}
             onSaveImageBonus={saveImageBonus}
           />
