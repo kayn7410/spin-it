@@ -12,6 +12,7 @@ type Props = {
   centerImage: string;
   imageBonusEnabled: boolean;
   imageBonusPerImage: number;
+  spinDurationSec: number;
   onSaveRole: (rw: { id?: string; role: string; weight: number }) => Promise<void>;
   onDeleteRole: (id: string) => Promise<void>;
   onSaveCenterImage: (dataUrl: string) => Promise<void>;
@@ -19,6 +20,7 @@ type Props = {
     imageBonusEnabled?: boolean;
     imageBonusPerImage?: number;
   }) => Promise<void>;
+  onSaveSpinDuration: (seconds: number) => Promise<void>;
 };
 
 export function RoleSettings({
@@ -26,14 +28,17 @@ export function RoleSettings({
   centerImage,
   imageBonusEnabled,
   imageBonusPerImage,
+  spinDurationSec,
   onSaveRole,
   onDeleteRole,
   onSaveCenterImage,
   onSaveImageBonus,
+  onSaveSpinDuration,
 }: Props) {
   const [newRole, setNewRole] = useState("");
   const [newWeight, setNewWeight] = useState(5);
   const [perImage, setPerImage] = useState(imageBonusPerImage);
+  const [duration, setDuration] = useState(spinDurationSec);
   const fileRef = useRef<HTMLInputElement>(null);
 
   async function add(e: React.FormEvent) {
