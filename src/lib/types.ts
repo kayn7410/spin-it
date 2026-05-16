@@ -2,9 +2,13 @@ export type Entry = {
   id: string;
   name: string;
   weight: number;
-  source: "manual" | "discord";
+  source: "manual" | "discord" | "twitter";
   discordUserId?: string;
   discordRole?: string;
+  /** Twitter user id (used to dedupe so each user only enters once per post). */
+  twitterUserId?: string;
+  /** The tweet id being tracked (the post whose replies are entries). */
+  twitterTweetId?: string;
   /** Bonus weight added from attachments (when image-bonus is on). */
   imageBonus?: number;
   createdAt: number;
@@ -30,4 +34,8 @@ export type WheelData = {
   imageBonusPerImage?: number;
   /** Spin duration in seconds (default 5). */
   spinDurationSec?: number;
+  /** Optional password required when opening the wheel via a shared link. */
+  sharePassword?: string;
+  /** Client-side flag indicating whether a share password is set (server strips sharePassword). */
+  hasSharePassword?: boolean;
 };

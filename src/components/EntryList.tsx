@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Trash2, X, Pencil, Check, Undo2, Shuffle } from "lucide-react";
+import { Trash2, X, Undo2, Shuffle } from "lucide-react";
 import type { Entry } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -112,7 +112,7 @@ export function EntryList({
               value={weight}
               onChange={(e) => setWeight(Number(e.target.value) || 1)}
               className="w-20"
-              title="Number of entries (weight)"
+              title="Number of entries"
             />
             <Button type="submit">Add</Button>
           </form>
@@ -134,10 +134,10 @@ export function EntryList({
                 value={bulkWeight}
                 onChange={(e) => setBulkWeight(Number(e.target.value) || 1)}
                 className="w-24"
-                title="Weight applied to every name"
+                title="Entries applied to every name"
               />
               <span className="text-xs text-muted-foreground">
-                weight per name ·{" "}
+                entries per name ·{" "}
                 {bulkText.split(/\r?\n/).map((s) => s.trim()).filter(Boolean).length} ready
               </span>
               <Button type="submit" className="ml-auto">
@@ -173,83 +173,78 @@ function EntryRow({
   onUpdate: (id: string, patch: { name?: string; weight?: number }) => Promise<void>;
   onRemove: (id: string) => Promise<void>;
 }) {
-  const [editing, setEditing] = useState(false);
   const [name, setName] = useState(entry.name);
   const [weight, setWeight] = useState(entry.weight);
 
-  async function save() {
-    if (!name.trim()) return;
-    await onUpdate(entry.id, { name, weight });
-    setEditing(false);
+  // Keep local state in sync if entry changes from elsewhere (e.g. polling)
+  if (name !== entry.name && document.activeElement?.getAttribute("data-entry-id") !== entry.id + "-name") {
+    // no-op; we use uncontrolled sync via key in parent if needed
   }
 
-  if (editing) {
-    return (
-      <li className="flex items-center gap-2 rounded-md bg-muted/60 px-2 py-1.5">
-        <Input
-          value={name}
-          onChange={(ev) => setName(ev.target.value)}
-          maxLength={64}
-          className="h-8 flex-1"
-          autoFocus
-        />
-        <Input
-          type="number"
-          min={1}
-          max={1000}
-          value={weight}
-          onChange={(ev) => setWeight(Number(ev.target.value) || 1)}
-          className="h-8 w-16"
-        />
-        <Button size="icon" variant="ghost" onClick={save} aria-label="Save">
-          <Check className="h-4 w-4" />
-        </Button>
-        <Button
-          size="icon"
-          variant="ghost"
-          onClick={() => {
-            setName(entry.name);
-            setWeight(entry.weight);
-            setEditing(false);
-          }}
-          aria-label="Cancel"
-        >
-          <X className="h-4 w-4" />
-        </Button>
-      </li>
-    );
+  async function commitName() {
+    const trimmed = name.trim();
+    if (!trimmed || trimmed === entry.name) {
+      setName(entry.name);
+      return;
+    }
+    await onUpdate(entry.id, { name: trimmed });
+  }
+
+  async function commitWeight(next: number) {
+    const w = Math.max(1, Math.min(1000, Math.floor(next) || 1));
+    setWeight(w);
+    if (w === entry.weight) return;
+    await onUpdate(entry.id, { weight: w });
   }
 
   return (
-    <li className="group flex items-center justify-between rounded-md px-2 py-1.5 hover:bg-muted">
-      <div className="flex min-w-0 flex-1 items-center gap-2">
-        <span className="truncate font-medium">{entry.name}</span>
-        <Badge variant="secondary" className="shrink-0">
-          ×{entry.weight}
+    <li className="group flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted/60">
+      <Input
+        data-entry-id={`${entry.id}-name`}
+        value={name}
+        onChange={(ev) => setName(ev.target.value)}
+        onBlur={commitName}
+        onKeyDown={(ev) => {
+          if (ev.key === "Enter") (ev.target as HTMLInputElement).blur();
+          if (ev.key === "Escape") {
+            setName(entry.name);
+            (ev.target as HTMLInputElement).blur();
+          }
+        }}
+        maxLength={64}
+        className="h-8 flex-1 border-transparent bg-transparent px-2 font-medium hover:border-border focus:border-border"
+      />
+      <Input
+        type="number"
+        min={1}
+        max={1000}
+        value={weight}
+        onChange={(ev) => setWeight(Number(ev.target.value) || 1)}
+        onBlur={(ev) => commitWeight(Number(ev.target.value) || 1)}
+        onKeyDown={(ev) => {
+          if (ev.key === "Enter") (ev.target as HTMLInputElement).blur();
+        }}
+        className="h-8 w-14 px-2 text-center"
+        title="Entries"
+      />
+      {entry.source === "discord" && (
+        <Badge variant="outline" className="shrink-0 text-[10px]">
+          {entry.discordRole ?? "discord"}
+          {entry.imageBonus ? ` +${entry.imageBonus}🖼` : ""}
         </Badge>
-        {entry.source === "discord" && (
-          <Badge variant="outline" className="shrink-0 text-[10px]">
-            {entry.discordRole ?? "discord"}
-            {entry.imageBonus ? ` +${entry.imageBonus}🖼` : ""}
-          </Badge>
-        )}
-      </div>
-      <div className="flex items-center opacity-0 transition-opacity group-hover:opacity-100">
-        <button
-          onClick={() => setEditing(true)}
-          className="rounded p-1 hover:bg-accent"
-          aria-label={`Edit ${entry.name}`}
-        >
-          <Pencil className="h-4 w-4" />
-        </button>
-        <button
-          onClick={() => onRemove(entry.id)}
-          className="rounded p-1 hover:bg-destructive/10 hover:text-destructive"
-          aria-label={`Remove ${entry.name}`}
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
+      )}
+      {entry.source === "twitter" && (
+        <Badge variant="outline" className="shrink-0 text-[10px]">
+          twitter
+        </Badge>
+      )}
+      <button
+        onClick={() => onRemove(entry.id)}
+        className="shrink-0 rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+        aria-label={`Remove ${entry.name}`}
+      >
+        <X className="h-4 w-4" />
+      </button>
     </li>
   );
 }

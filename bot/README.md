@@ -52,8 +52,17 @@ recorded in `data/wheel.json` (the bot itself uses the value from `bot/.env`).
 
 ## Behavior
 - Bot only reacts to messages in the configured channel; everything else is ignored.
-- The full message text becomes the wheel entry name (trimmed, capped at 64 chars).
-- Each Discord user can submit **once**. Later submissions from the same user
-  are ignored (the bot reacts with ⚠️).
-- The user's highest-weighted matching role decides their wheel weight.
-- ✅ added · ⚠️ duplicate · ❌ error
+- Messages MUST follow this format (case-insensitive, order doesn't matter):
+  ```
+  twitter username: yourhandle
+  boosts: 3
+  ```
+  The `twitter username` becomes the wheel entry name. The `boosts` number is
+  multiplied by the **Server Booster** role weight (configured in Settings) and
+  added on top of the @everyone baseline — but only if the user actually has
+  the `Server Booster` role in Discord.
+- Each Discord user can submit **once**. Later submissions are ignored (⚠️).
+- Messages that don't match the format get a ❌ reaction and a short reply
+  mentioning only the author with the correct format. The reply auto-deletes
+  after 15 seconds; the original message is left in place.
+- ✅ added · ⚠️ duplicate · ❌ invalid format / error

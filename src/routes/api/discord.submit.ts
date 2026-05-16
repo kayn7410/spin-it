@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
-import { addDiscordEntry } from "@/server/store";
+import { addDiscordEntry } from "@/lib/store.server";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -9,7 +9,7 @@ const cors = {
 };
 
 const Schema = z.object({
-  name: z.string().min(1).max(64),
+  name: z.string().min(1).max(500),
   discordUserId: z.string().min(1).max(64),
   roles: z.array(z.string().min(1).max(100)).max(50),
   attachmentCount: z.number().int().min(0).max(50).optional(),

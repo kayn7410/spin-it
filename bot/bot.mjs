@@ -18,12 +18,22 @@
 //   - Entry weight is decided by the user's highest-weighted role
 //     (role IDs configured in the web UI Settings).
 
-import { Client, GatewayIntentBits, Partials, Events } from "discord.js";
+import {
+  Client,
+  GatewayIntentBits,
+  Partials,
+  Events,
+  REST,
+  Routes,
+  SlashCommandBuilder,
+  MessageFlags,
+} from "discord.js";
 import "dotenv/config";
 
 const TOKEN = process.env.DISCORD_TOKEN;
 const API_URL = (process.env.API_URL || "http://localhost:8080").replace(/\/$/, "");
 const CHANNEL_ID = process.env.CHANNEL_ID;
+const GUILD_ID = process.env.GUILD_ID || "";
 
 if (!TOKEN) {
   console.error("Missing DISCORD_TOKEN in environment");
@@ -44,61 +54,143 @@ const client = new Client({
   partials: [Partials.Channel, Partials.Message],
 });
 
-client.once(Events.ClientReady, (c) => {
-  console.log(`✓ Logged in as ${c.user.tag}`);
-  console.log(`  Listening to channel: ${CHANNEL_ID}`);
-  console.log(`  Posting to: ${API_URL}/api/discord/submit`);
-});
+const scanCommand = new SlashCommandBuilder()
+  .setName("scan")
+  .setDescription(
+    "Scan the configured channel and add the first message of each user to the wheel.",
+  )
+  .toJSON();
 
-client.on(Events.MessageCreate, async (msg) => {
+async function registerCommands(appId) {
+  const rest = new REST({ version: "10" }).setToken(TOKEN);
   try {
-    if (msg.author.bot) return;
-    if (msg.channelId !== CHANNEL_ID) return;
-
-    const name = (msg.content || "").trim();
-    if (!name) return;
-
-    // Send role IDs (the web UI maps role IDs → weight). Skip @everyone.
-    const roleIds =
-      msg.member?.roles?.cache
-        ?.filter((r) => r.name !== "@everyone")
-        ?.map((r) => r.id) ?? [];
-
-    // Count image attachments (server decides whether bonus is applied).
-    const attachmentCount = msg.attachments
-      ? [...msg.attachments.values()].filter((a) => {
-          const ct = (a.contentType || "").toLowerCase();
-          return ct.startsWith("image/");
-        }).length
-      : 0;
-
-    const res = await fetch(`${API_URL}/api/discord/submit`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: name.slice(0, 64),
-        discordUserId: msg.author.id,
-        roles: roleIds,
-        attachmentCount,
-      }),
-    });
-
-    const data = await res.json().catch(() => ({}));
-
-    if (res.status === 201 && data.entry) {
-      await msg.react("✅").catch(() => {});
-      console.log(
-        `+ Added "${data.entry.name}" (×${data.entry.weight}, ${data.entry.discordRole})`,
-      );
-    } else if (data.reason === "duplicate-user") {
-      await msg.react("⚠️").catch(() => {});
-      console.log(`- Ignored duplicate from ${msg.author.tag}`);
+    if (GUILD_ID) {
+      await rest.put(Routes.applicationGuildCommands(appId, GUILD_ID), {
+        body: [scanCommand],
+      });
+      console.log(`✓ Registered /scan in guild ${GUILD_ID}`);
     } else {
-      await msg.react("❌").catch(() => {});
-      console.warn(`! API error ${res.status}:`, data);
+      await rest.put(Routes.applicationCommands(appId), { body: [scanCommand] });
+      console.log("✓ Registered /scan globally (may take up to 1h to appear)");
     }
   } catch (err) {
-    console.error("Handler error:", err);
+    console.error("Failed to register slash commands:", err);
+  }
+}
+
+client.once(Events.ClientReady, async (c) => {
+  console.log(`✓ Logged in as ${c.user.tag}`);
+  console.log(`  Target channel: ${CHANNEL_ID}`);
+  console.log(`  Posting to: ${API_URL}/api/discord/submit`);
+  await registerCommands(c.user.id);
+});
+
+/**
+ * Fetch every message in the channel (paginated, oldest → newest order in result).
+ */
+async function fetchAllMessages(channel) {
+  const all = [];
+  let before;
+  // Discord caps at 100 per request. Loop until empty.
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const batch = await channel.messages.fetch({ limit: 100, before });
+    if (batch.size === 0) break;
+    for (const m of batch.values()) all.push(m);
+    before = batch.last()?.id;
+    if (batch.size < 100) break;
+  }
+  // Sort oldest first so "first message per user" is correct.
+  all.sort((a, b) => Number(a.createdTimestamp - b.createdTimestamp));
+  return all;
+}
+
+async function submitMessage(msg) {
+  const name = (msg.content || "").trim();
+  if (!name) return { skipped: "empty" };
+
+  let member = msg.member;
+  if (!member && msg.guild) {
+    member = await msg.guild.members.fetch(msg.author.id).catch(() => null);
+  }
+  const memberRoles =
+    member?.roles?.cache?.filter((r) => r.name !== "@everyone") ?? [];
+  const roleNames = [...memberRoles.map((r) => r.name)];
+
+  const attachmentCount = msg.attachments
+    ? [...msg.attachments.values()].filter((a) => {
+        const ct = (a.contentType || "").toLowerCase();
+        return ct.startsWith("image/");
+      }).length
+    : 0;
+
+  const res = await fetch(`${API_URL}/api/discord/submit`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: name.slice(0, 500),
+      discordUserId: msg.author.id,
+      roles: roleNames,
+      attachmentCount,
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 201 && data.entry) return { added: data.entry };
+  return { skipped: data.reason || `http-${res.status}` };
+}
+
+client.on(Events.InteractionCreate, async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+  if (interaction.commandName !== "scan") return;
+
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+  try {
+    const channel = await client.channels.fetch(CHANNEL_ID).catch(() => null);
+    if (!channel || !channel.isTextBased()) {
+      await interaction.editReply(
+        `Could not access channel \`${CHANNEL_ID}\`. Check CHANNEL_ID and bot permissions.`,
+      );
+      return;
+    }
+
+    console.log(`/scan invoked by ${interaction.user.tag}`);
+    const messages = await fetchAllMessages(channel);
+    console.log(`  fetched ${messages.length} messages`);
+
+    // Keep only the first (earliest) message per non-bot user.
+    const firstByUser = new Map();
+    for (const m of messages) {
+      if (m.author.bot) continue;
+      if (!firstByUser.has(m.author.id)) firstByUser.set(m.author.id, m);
+    }
+
+    let added = 0;
+    let skipped = 0;
+    const reasons = {};
+    for (const m of firstByUser.values()) {
+      const result = await submitMessage(m);
+      if (result.added) {
+        added++;
+      } else {
+        skipped++;
+        reasons[result.skipped] = (reasons[result.skipped] || 0) + 1;
+      }
+    }
+
+    const reasonStr = Object.entries(reasons)
+      .map(([k, v]) => `${k}: ${v}`)
+      .join(", ");
+    await interaction.editReply(
+      `Scan complete. Scanned ${messages.length} messages from ${firstByUser.size} unique users.\n` +
+        `Added: **${added}** · Skipped: **${skipped}**${reasonStr ? ` (${reasonStr})` : ""}`,
+    );
+    console.log(`  added=${added} skipped=${skipped} ${reasonStr}`);
+  } catch (err) {
+    console.error("Scan error:", err);
+    await interaction
+      .editReply(`Scan failed: ${err.message || "unknown error"}`)
+      .catch(() => {});
   }
 });
 

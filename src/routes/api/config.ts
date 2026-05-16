@@ -5,8 +5,9 @@ import {
   setCenterImage,
   setImageBonus,
   setSpinDuration,
+  setSharePassword,
   upsertRoleWeight,
-} from "@/server/store";
+} from "@/lib/store.server";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -32,6 +33,10 @@ const ImageBonusSchema = z.object({
 
 const SpinDurationSchema = z.object({
   spinDurationSec: z.number().min(1).max(20),
+});
+
+const SharePasswordSchema = z.object({
+  sharePassword: z.string().max(200),
 });
 
 function json(body: unknown, status = 200) {
@@ -67,6 +72,12 @@ export const Route = createFileRoute("/api/config")({
             const parsed = SpinDurationSchema.safeParse(body);
             if (!parsed.success) return json({ error: "Invalid input" }, 400);
             setSpinDuration(parsed.data.spinDurationSec);
+            return json({ ok: true });
+          }
+          if ("sharePassword" in body) {
+            const parsed = SharePasswordSchema.safeParse(body);
+            if (!parsed.success) return json({ error: "Invalid input" }, 400);
+            setSharePassword(parsed.data.sharePassword);
             return json({ ok: true });
           }
         }

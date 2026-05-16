@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiStateRouteImport } from './routes/api/state'
 import { Route as ApiEntriesRouteImport } from './routes/api/entries'
 import { Route as ApiConfigRouteImport } from './routes/api/config'
+import { Route as ApiShareVerifyRouteImport } from './routes/api/share.verify'
 import { Route as ApiEntriesShuffleRouteImport } from './routes/api/entries.shuffle'
 import { Route as ApiEntriesRestoreRouteImport } from './routes/api/entries.restore'
 import { Route as ApiDiscordSubmitRouteImport } from './routes/api/discord.submit'
@@ -35,6 +36,11 @@ const ApiEntriesRoute = ApiEntriesRouteImport.update({
 const ApiConfigRoute = ApiConfigRouteImport.update({
   id: '/api/config',
   path: '/api/config',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiShareVerifyRoute = ApiShareVerifyRouteImport.update({
+  id: '/api/share/verify',
+  path: '/api/share/verify',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiEntriesShuffleRoute = ApiEntriesShuffleRouteImport.update({
@@ -61,6 +67,7 @@ export interface FileRoutesByFullPath {
   '/api/discord/submit': typeof ApiDiscordSubmitRoute
   '/api/entries/restore': typeof ApiEntriesRestoreRoute
   '/api/entries/shuffle': typeof ApiEntriesShuffleRoute
+  '/api/share/verify': typeof ApiShareVerifyRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -70,6 +77,7 @@ export interface FileRoutesByTo {
   '/api/discord/submit': typeof ApiDiscordSubmitRoute
   '/api/entries/restore': typeof ApiEntriesRestoreRoute
   '/api/entries/shuffle': typeof ApiEntriesShuffleRoute
+  '/api/share/verify': typeof ApiShareVerifyRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -80,6 +88,7 @@ export interface FileRoutesById {
   '/api/discord/submit': typeof ApiDiscordSubmitRoute
   '/api/entries/restore': typeof ApiEntriesRestoreRoute
   '/api/entries/shuffle': typeof ApiEntriesShuffleRoute
+  '/api/share/verify': typeof ApiShareVerifyRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -91,6 +100,7 @@ export interface FileRouteTypes {
     | '/api/discord/submit'
     | '/api/entries/restore'
     | '/api/entries/shuffle'
+    | '/api/share/verify'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -100,6 +110,7 @@ export interface FileRouteTypes {
     | '/api/discord/submit'
     | '/api/entries/restore'
     | '/api/entries/shuffle'
+    | '/api/share/verify'
   id:
     | '__root__'
     | '/'
@@ -109,6 +120,7 @@ export interface FileRouteTypes {
     | '/api/discord/submit'
     | '/api/entries/restore'
     | '/api/entries/shuffle'
+    | '/api/share/verify'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -117,6 +129,7 @@ export interface RootRouteChildren {
   ApiEntriesRoute: typeof ApiEntriesRouteWithChildren
   ApiStateRoute: typeof ApiStateRoute
   ApiDiscordSubmitRoute: typeof ApiDiscordSubmitRoute
+  ApiShareVerifyRoute: typeof ApiShareVerifyRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -147,6 +160,13 @@ declare module '@tanstack/react-router' {
       path: '/api/config'
       fullPath: '/api/config'
       preLoaderRoute: typeof ApiConfigRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/share/verify': {
+      id: '/api/share/verify'
+      path: '/api/share/verify'
+      fullPath: '/api/share/verify'
+      preLoaderRoute: typeof ApiShareVerifyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/entries/shuffle': {
@@ -193,6 +213,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiEntriesRoute: ApiEntriesRouteWithChildren,
   ApiStateRoute: ApiStateRoute,
   ApiDiscordSubmitRoute: ApiDiscordSubmitRoute,
+  ApiShareVerifyRoute: ApiShareVerifyRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
