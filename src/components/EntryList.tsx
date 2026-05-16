@@ -148,7 +148,7 @@ export function EntryList({
         </TabsContent>
       </Tabs>
 
-      <ScrollArea className="h-72 flex-1">
+      <ScrollArea className="h-[60vh] min-h-72 flex-1">
         <ul className="space-y-1 pr-3">
           {entries.length === 0 && (
             <li className="py-8 text-center text-sm text-muted-foreground">
