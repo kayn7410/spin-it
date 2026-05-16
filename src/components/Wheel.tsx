@@ -125,6 +125,26 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
   const cx = 250;
   const cy = 250;
   const hubRadius = 60;
+  const outerPadding = 16;
+  const innerPadding = hubRadius + 8;
+  const labelOuterR = radius - outerPadding;
+  const radialSpace = Math.max(20, labelOuterR - innerPadding);
+
+  // Uniform font size across every slice so all names read at the same visual
+  // weight regardless of weight differences. Capped by the thinnest slice's
+  // tangential thickness (so labels stay inside their slice) and clamped to a
+  // comfortable readable range. Long names get squeezed per-slice via
+  // textLength below — never shrunk by varying fontSize.
+  const minSweep = slices.reduce(
+    (m, s) => Math.min(m, s.endAngle - s.startAngle),
+    360,
+  );
+  const minInnerThickness =
+    2 * innerPadding * Math.sin((minSweep * Math.PI) / 360);
+  const uniformFontSize = Math.max(
+    10,
+    Math.min(18, minInnerThickness * 0.82),
+  );
 
   return (
     <div
@@ -165,40 +185,14 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
 
           const midAngle = (s.startAngle + s.endAngle) / 2;
           const midRad = ((midAngle - 90) * Math.PI) / 180;
-          // Anchor the label near the outer rim and extend inward toward the
-          // hub. This guarantees text never crosses the rim regardless of
-          // length — long names just reach further in toward the center.
-          const outerPadding = 16; // clearance from the wheel rim
-          const innerPadding = hubRadius + 8; // clearance from the center hub
-          const labelOuterR = radius - outerPadding;
           const lx = cx + labelOuterR * Math.cos(midRad);
           const ly = cy + labelOuterR * Math.sin(midRad);
-          const sweep = s.endAngle - s.startAngle;
-          // Auto-fit the full name (no truncation), like wheelofnames.com:
-          // - Cap by tangential thickness so it fits across the slice height.
-          // - Cap by available radial length so it fits along the slice.
-          // Use thickness measured at the label's midpoint (pessimistic for
-          // the inner end of long labels), so labels stay inside the slice.
-          const radialSpace = Math.max(20, labelOuterR - innerPadding);
-          const name = s.entry.name;
-          // Approx character width for our bold font ~ 0.55 * fontSize.
-          const maxByRadial = radialSpace / Math.max(1, name.length * 0.55);
-          // Thickness at the inner end of the label (narrowest point the
-          // text will occupy) — keeps long names from poking through edges.
-          const innerThickness = 2 * innerPadding * Math.sin((sweep * Math.PI) / 360);
-          // Tight cap by slice thickness — no artificial floor so dense
-          // wheels (many entries) stay readable without label collisions.
-          const maxByThickness = innerThickness * 0.82;
-          // Hard ceiling first, comfortable floor second. If the floor would
-          // overflow into the hub, we squeeze with textLength below instead
-          // of letting the text clip.
-          const idealSize = Math.min(40, maxByThickness, maxByRadial);
-          const fontSize = Math.max(6, idealSize);
-          // Estimated pixel width at the chosen fontSize.
+          const name = s.entry.name || "—";
+          const fontSize = uniformFontSize;
+          // Estimated pixel width at the chosen fontSize. Squeeze with
+          // textLength only when the name doesn't fit radially.
           const estWidth = name.length * fontSize * 0.55;
           const needsSqueeze = estWidth > radialSpace;
-          // Rotate label to lie along the radius. Anchor at the outer end
-          // (textAnchor="end") so the text extends inward from the rim.
           const textRotation = midAngle - 90;
 
           return (

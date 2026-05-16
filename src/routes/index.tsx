@@ -373,7 +373,10 @@ function Home() {
       </main>
 
       <Sheet open={showPanel} onOpenChange={setShowPanel}>
-        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-md">
+        <SheetContent
+          side="right"
+          className="w-full overflow-y-auto sm:!max-w-[min(95vw,720px)]"
+        >
           <SheetHeader>
             <SheetTitle>Entries</SheetTitle>
           </SheetHeader>

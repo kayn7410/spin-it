@@ -148,7 +148,7 @@ export function EntryList({
         </TabsContent>
       </Tabs>
 
-      <ScrollArea className="h-72 flex-1">
+      <ScrollArea className="h-[60vh] min-h-72 flex-1">
         <ul className="space-y-1 pr-3">
           {entries.length === 0 && (
             <li className="py-8 text-center text-sm text-muted-foreground">
@@ -198,10 +198,11 @@ function EntryRow({
   }
 
   return (
-    <li className="group flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted/60">
+    <li className="group flex flex-wrap items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted/60">
       <Input
         data-entry-id={`${entry.id}-name`}
         value={name}
+        placeholder={entry.source === "discord" ? "(no display name)" : "name"}
         onChange={(ev) => setName(ev.target.value)}
         onBlur={commitName}
         onKeyDown={(ev) => {
@@ -212,7 +213,7 @@ function EntryRow({
           }
         }}
         maxLength={64}
-        className="h-8 flex-1 border-transparent bg-transparent px-2 font-medium hover:border-border focus:border-border"
+        className="h-8 min-w-[10rem] flex-1 border-transparent bg-transparent px-2 font-medium hover:border-border focus:border-border"
       />
       <Input
         type="number"
@@ -228,7 +229,7 @@ function EntryRow({
         title="Entries"
       />
       {entry.source === "discord" && (
-        <Badge variant="outline" className="shrink-0 text-[10px]">
+        <Badge variant="outline" className="shrink-0 whitespace-nowrap text-[10px]">
           {entry.discordRole ?? "discord"}
           {entry.imageBonus ? ` +${entry.imageBonus}🖼` : ""}
         </Badge>
@@ -240,7 +241,7 @@ function EntryRow({
       )}
       <button
         onClick={() => onRemove(entry.id)}
-        className="shrink-0 rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+        className="ml-auto shrink-0 rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
         aria-label={`Remove ${entry.name}`}
       >
         <X className="h-4 w-4" />
