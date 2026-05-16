@@ -186,12 +186,14 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
           // Thickness at the inner end of the label (narrowest point the
           // text will occupy) — keeps long names from poking through edges.
           const innerThickness = 2 * innerPadding * Math.sin((sweep * Math.PI) / 360);
-          const maxByThickness = Math.max(12, innerThickness * 0.85);
+          // Tight cap by slice thickness — no artificial floor so dense
+          // wheels (many entries) stay readable without label collisions.
+          const maxByThickness = innerThickness * 0.82;
           // Hard ceiling first, comfortable floor second. If the floor would
           // overflow into the hub, we squeeze with textLength below instead
           // of letting the text clip.
           const idealSize = Math.min(40, maxByThickness, maxByRadial);
-          const fontSize = Math.max(12, idealSize);
+          const fontSize = Math.max(6, idealSize);
           // Estimated pixel width at the chosen fontSize.
           const estWidth = name.length * fontSize * 0.55;
           const needsSqueeze = estWidth > radialSpace;
