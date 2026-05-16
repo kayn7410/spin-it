@@ -127,7 +127,10 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
   const hubRadius = 60;
 
   return (
-    <div className="relative aspect-square w-full max-w-[520px]">
+    <div
+      className="relative aspect-square w-full"
+      style={{ width: "min(92vw, calc(100vh - 200px))", maxWidth: "100%" }}
+    >
       {/* Pointer */}
       <div
         className="absolute left-1/2 top-0 z-10 h-0 w-0 -translate-x-1/2 -translate-y-2"
