@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Entry } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { playWinnerFanfare } from "@/lib/sounds";
+
 
 type Props = {
   entries: Entry[];
@@ -103,6 +105,7 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
     setTimeout(() => {
       setSpinning(false);
       setTransitioning(false);
+      playWinnerFanfare();
       onResult(entries[winnerIdx]);
     }, spinDurationSec * 1000 + 200);
   }
@@ -124,7 +127,10 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
   const hubRadius = 60;
 
   return (
-    <div className="relative aspect-square w-full max-w-[520px]">
+    <div
+      className="relative aspect-square w-full"
+      style={{ width: "min(92vw, calc(100vh - 200px))", maxWidth: "100%" }}
+    >
       {/* Pointer */}
       <div
         className="absolute left-1/2 top-0 z-10 h-0 w-0 -translate-x-1/2 -translate-y-2"
@@ -159,31 +165,64 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
 
           const midAngle = (s.startAngle + s.endAngle) / 2;
           const midRad = ((midAngle - 90) * Math.PI) / 180;
-          const labelR = radius * 0.65;
-          const lx = cx + labelR * Math.cos(midRad);
-          const ly = cy + labelR * Math.sin(midRad);
+          // Anchor the label near the outer rim and extend inward toward the
+          // hub. This guarantees text never crosses the rim regardless of
+          // length — long names just reach further in toward the center.
+          const outerPadding = 16; // clearance from the wheel rim
+          const innerPadding = hubRadius + 8; // clearance from the center hub
+          const labelOuterR = radius - outerPadding;
+          const lx = cx + labelOuterR * Math.cos(midRad);
+          const ly = cy + labelOuterR * Math.sin(midRad);
           const sweep = s.endAngle - s.startAngle;
-          const showLabel = sweep > 8;
-          const fontSize = Math.max(10, Math.min(20, 240 / Math.max(entries.length, 6)));
+          // Auto-fit the full name (no truncation), like wheelofnames.com:
+          // - Cap by tangential thickness so it fits across the slice height.
+          // - Cap by available radial length so it fits along the slice.
+          // Use thickness measured at the label's midpoint (pessimistic for
+          // the inner end of long labels), so labels stay inside the slice.
+          const radialSpace = Math.max(20, labelOuterR - innerPadding);
+          const name = s.entry.name;
+          // Approx character width for our bold font ~ 0.55 * fontSize.
+          const maxByRadial = radialSpace / Math.max(1, name.length * 0.55);
+          // Thickness at the inner end of the label (narrowest point the
+          // text will occupy) — keeps long names from poking through edges.
+          const innerThickness = 2 * innerPadding * Math.sin((sweep * Math.PI) / 360);
+          // Tight cap by slice thickness — no artificial floor so dense
+          // wheels (many entries) stay readable without label collisions.
+          const maxByThickness = innerThickness * 0.82;
+          // Hard ceiling first, comfortable floor second. If the floor would
+          // overflow into the hub, we squeeze with textLength below instead
+          // of letting the text clip.
+          const idealSize = Math.min(40, maxByThickness, maxByRadial);
+          const fontSize = Math.max(6, idealSize);
+          // Estimated pixel width at the chosen fontSize.
+          const estWidth = name.length * fontSize * 0.55;
+          const needsSqueeze = estWidth > radialSpace;
+          // Rotate label to lie along the radius. Anchor at the outer end
+          // (textAnchor="end") so the text extends inward from the rim.
+          const textRotation = midAngle - 90;
 
           return (
             <g key={s.entry.id}>
               <path d={path} fill={s.color} stroke="var(--card)" strokeWidth="2" />
-              {showLabel && (
-                <text
-                  x={lx}
-                  y={ly}
-                  textAnchor="middle"
-                  dominantBaseline="middle"
-                  fill="oklch(0.15 0.04 260)"
-                  fontWeight={700}
-                  fontSize={fontSize}
-                  transform={`rotate(${midAngle} ${lx} ${ly})`}
-                  style={{ pointerEvents: "none" }}
-                >
-                  {truncate(s.entry.name, sweep < 18 ? 8 : 16)}
-                </text>
-              )}
+              <text
+                x={lx}
+                y={ly}
+                textAnchor="end"
+                dominantBaseline="middle"
+                fill="oklch(0.99 0 0)"
+                stroke="oklch(0.2 0.05 320 / 0.6)"
+                strokeWidth={Math.max(0.4, fontSize / 14)}
+                paintOrder="stroke"
+                fontWeight={800}
+                fontSize={fontSize}
+                transform={`rotate(${textRotation} ${lx} ${ly})`}
+                {...(needsSqueeze
+                  ? { textLength: radialSpace, lengthAdjust: "spacingAndGlyphs" as const }
+                  : {})}
+                style={{ pointerEvents: "none" }}
+              >
+                {name}
+              </text>
             </g>
           );
         })}
@@ -233,8 +272,4 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
       </button>
     </div>
   );
-}
-
-function truncate(s: string, max: number) {
-  return s.length > max ? s.slice(0, max - 1) + "…" : s;
 }

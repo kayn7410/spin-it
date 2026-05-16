@@ -6,7 +6,7 @@ import {
   clearEntries,
   removeEntry,
   updateEntry,
-} from "@/server/store";
+} from "@/lib/store.server";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",

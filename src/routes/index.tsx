@@ -1,19 +1,27 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Settings, Moon, Sun } from "lucide-react";
+import { Settings, Moon, Sun, PanelRightOpen, Share2 } from "lucide-react";
 import { useTheme } from "@/hooks/use-theme";
 import type { Entry, WheelData } from "@/lib/types";
 import { Wheel } from "@/components/Wheel";
 import { EntryList } from "@/components/EntryList";
+import { TwitterEntries } from "@/components/TwitterEntries";
 import { RoleSettings } from "@/components/RoleSettings";
 import { Confetti } from "@/components/Confetti";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/")({
@@ -37,8 +45,60 @@ function Home() {
   const [winner, setWinner] = useState<Entry | null>(null);
   const [showWinner, setShowWinner] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showPanel, setShowPanel] = useState(false);
   const [canUndo, setCanUndo] = useState(false);
   const pollRef = useRef<number | null>(null);
+
+  // Share-link password gating.
+  const [shareGate, setShareGate] = useState<"checking" | "locked" | "open">(
+    "checking",
+  );
+  const [sharePwInput, setSharePwInput] = useState("");
+  const [shareError, setShareError] = useState("");
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const host = window.location.hostname;
+    const isLocal =
+      host === "localhost" || host === "127.0.0.1" || host === "::1";
+    // Mark this browser as the "owner" the first time it's used on localhost,
+    // so the person hosting the wheel never gets prompted for their own password.
+    if (isLocal) localStorage.setItem("wheel-owner", "1");
+    const isOwner = localStorage.getItem("wheel-owner") === "1";
+    // Explicit override: ?share=1 forces the share gate (useful for previewing).
+    const forceShare = params.get("share") === "1";
+    if (isOwner && !forceShare) {
+      setShareGate("open");
+      return;
+    }
+    if (sessionStorage.getItem("share-ok") === "1") {
+      setShareGate("open");
+      return;
+    }
+    fetch("/api/share/verify")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d?.requiresPassword) setShareGate("locked");
+        else setShareGate("open");
+      })
+      .catch(() => setShareGate("open"));
+  }, []);
+
+  async function submitSharePassword(e: React.FormEvent) {
+    e.preventDefault();
+    setShareError("");
+    const res = await fetch("/api/share/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: sharePwInput }),
+    });
+    if (res.ok) {
+      sessionStorage.setItem("share-ok", "1");
+      setShareGate("open");
+    } else {
+      setShareError("Wrong password");
+    }
+  }
 
   const refresh = useCallback(async () => {
     try {
@@ -50,6 +110,7 @@ function Home() {
   }, []);
 
   useEffect(() => {
+    if (shareGate !== "open") return;
     refresh();
     pollRef.current = window.setInterval(() => {
       if (!spinning) refresh();
@@ -57,7 +118,7 @@ function Home() {
     return () => {
       if (pollRef.current) window.clearInterval(pollRef.current);
     };
-  }, [refresh, spinning]);
+  }, [refresh, spinning, shareGate]);
 
   async function addEntry(name: string, weight: number) {
     await fetch("/api/entries", {
@@ -169,6 +230,15 @@ function Home() {
     await refresh();
   }
 
+  async function saveSharePassword(password: string) {
+    await fetch("/api/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sharePassword: password }),
+    });
+    await refresh();
+  }
+
   async function removeWinnerAndClose() {
     if (winner) await removeEntry(winner.id);
     setShowWinner(false);
@@ -181,6 +251,46 @@ function Home() {
   const imageBonusEnabled = data?.imageBonusEnabled ?? false;
   const imageBonusPerImage = data?.imageBonusPerImage ?? 5;
   const spinDurationSec = data?.spinDurationSec ?? 5;
+  const hasSharePassword = data?.hasSharePassword ?? false;
+
+  if (shareGate === "checking") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background text-muted-foreground">
+        Loading…
+      </div>
+    );
+  }
+
+  if (shareGate === "locked") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background px-4">
+        <form
+          onSubmit={submitSharePassword}
+          className="w-full max-w-sm space-y-4 rounded-xl border border-border bg-card p-6 shadow"
+        >
+          <div>
+            <h1 className="text-xl font-bold">🔒 Password required</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              This shared wheel is protected. Enter the password to continue.
+            </p>
+          </div>
+          <Input
+            type="password"
+            autoFocus
+            value={sharePwInput}
+            onChange={(e) => setSharePwInput(e.target.value)}
+            placeholder="Password"
+          />
+          {shareError && (
+            <p className="text-sm text-destructive">{shareError}</p>
+          )}
+          <Button type="submit" className="w-full">
+            Unlock
+          </Button>
+        </form>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -210,6 +320,31 @@ function Home() {
                 <Moon className="h-4 w-4" />
               )}
             </Button>
+            <Button variant="outline" size="sm" onClick={() => setShowPanel(true)}>
+              <PanelRightOpen className="mr-2 h-4 w-4" />
+              Entries
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                const url = window.location.origin + "/?share=1";
+                try {
+                  await navigator.clipboard.writeText(url);
+                  toast.success("Share link copied", {
+                    description: hasSharePassword
+                      ? "Recipients will be asked for the password you set."
+                      : "Anyone with the link can view & edit. Set a password in Settings to restrict access.",
+                  });
+                } catch {
+                  toast.message("Share link", { description: url });
+                }
+              }}
+              title="Copy a public link to this wheel"
+            >
+              <Share2 className="mr-2 h-4 w-4" />
+              Share
+            </Button>
             <Button variant="outline" size="sm" onClick={() => setShowSettings(true)}>
               <Settings className="mr-2 h-4 w-4" />
               Settings
@@ -218,40 +353,46 @@ function Home() {
         </div>
       </header>
 
-      <main className="mx-auto grid max-w-7xl gap-6 px-4 py-8 sm:px-6 lg:grid-cols-[1fr_400px]">
-        <section className="flex flex-col items-center justify-center gap-6">
-          <Wheel
-            entries={entries}
-            onResult={handleResult}
-            spinning={spinning}
-            setSpinning={setSpinning}
-            centerImage={centerImage}
-            spinDurationSec={spinDurationSec}
-          />
-          <p className="text-center text-sm text-muted-foreground">
-            Total weight:{" "}
-            <span className="font-semibold text-foreground">
-              {entries.reduce((s, e) => s + e.weight, 0)}
-            </span>{" "}
-            · Names:{" "}
-            <span className="font-semibold text-foreground">{entries.length}</span>
-          </p>
-        </section>
-
-        <aside className="space-y-6">
-          <EntryList
-            entries={entries}
-            onAdd={addEntry}
-            onAddBulk={addEntriesBulk}
-            onUpdate={updateEntry}
-            onRemove={removeEntry}
-            onClear={clearEntries}
-            onUndoClear={undoClear}
-            onShuffle={shuffleEntries}
-            canUndo={canUndo}
-          />
-        </aside>
+      <main className="mx-auto flex max-w-7xl flex-col items-center justify-center gap-6 px-4 py-8 sm:px-6">
+        <Wheel
+          entries={entries}
+          onResult={handleResult}
+          spinning={spinning}
+          setSpinning={setSpinning}
+          centerImage={centerImage}
+          spinDurationSec={spinDurationSec}
+        />
+        <p className="text-center text-sm text-muted-foreground">
+          Total entries:{" "}
+          <span className="font-semibold text-foreground">
+            {entries.reduce((s, e) => s + e.weight, 0)}
+          </span>{" "}
+          · Names:{" "}
+          <span className="font-semibold text-foreground">{entries.length}</span>
+        </p>
       </main>
+
+      <Sheet open={showPanel} onOpenChange={setShowPanel}>
+        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-md">
+          <SheetHeader>
+            <SheetTitle>Entries</SheetTitle>
+          </SheetHeader>
+          <div className="mt-4 space-y-6">
+            <EntryList
+              entries={entries}
+              onAdd={addEntry}
+              onAddBulk={addEntriesBulk}
+              onUpdate={updateEntry}
+              onRemove={removeEntry}
+              onClear={clearEntries}
+              onUndoClear={undoClear}
+              onShuffle={shuffleEntries}
+              canUndo={canUndo}
+            />
+            <TwitterEntries onAddBulk={addEntriesBulk} />
+          </div>
+        </SheetContent>
+      </Sheet>
 
       <Dialog open={showWinner} onOpenChange={(o) => !o && setShowWinner(false)}>
         <DialogContent className="sm:max-w-md">
@@ -288,11 +429,13 @@ function Home() {
             imageBonusEnabled={imageBonusEnabled}
             imageBonusPerImage={imageBonusPerImage}
             spinDurationSec={spinDurationSec}
+            hasSharePassword={hasSharePassword}
             onSaveRole={saveRole}
             onDeleteRole={deleteRole}
             onSaveCenterImage={saveCenterImage}
             onSaveImageBonus={saveImageBonus}
             onSaveSpinDuration={saveSpinDuration}
+            onSaveSharePassword={saveSharePassword}
           />
         </DialogContent>
       </Dialog>

@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { restoreLastCleared } from "@/server/store";
+import { restoreLastCleared } from "@/lib/store.server";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",

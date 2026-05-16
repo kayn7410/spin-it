@@ -1,0 +1,15 @@
+{
+  "entries": [],
+  "roleWeights": [
+    {
+      "id": "default-everyone",
+      "role": "@everyone",
+      "weight": 1
+    }
+  ],
+  "channelId": "",
+  "centerImage": "",
+  "imageBonusEnabled": false,
+  "imageBonusPerImage": 5,
+  "spinDurationSec": 5
+}

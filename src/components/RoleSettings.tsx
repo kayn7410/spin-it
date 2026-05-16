@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Trash2, Plus, Upload, ImageOff } from "lucide-react";
+import { Trash2, Plus, Upload, ImageOff, Lock } from "lucide-react";
 import type { RoleWeight } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +13,7 @@ type Props = {
   imageBonusEnabled: boolean;
   imageBonusPerImage: number;
   spinDurationSec: number;
+  hasSharePassword: boolean;
   onSaveRole: (rw: { id?: string; role: string; weight: number }) => Promise<void>;
   onDeleteRole: (id: string) => Promise<void>;
   onSaveCenterImage: (dataUrl: string) => Promise<void>;
@@ -21,6 +22,7 @@ type Props = {
     imageBonusPerImage?: number;
   }) => Promise<void>;
   onSaveSpinDuration: (seconds: number) => Promise<void>;
+  onSaveSharePassword: (password: string) => Promise<void>;
 };
 
 export function RoleSettings({
@@ -29,16 +31,19 @@ export function RoleSettings({
   imageBonusEnabled,
   imageBonusPerImage,
   spinDurationSec,
+  hasSharePassword,
   onSaveRole,
   onDeleteRole,
   onSaveCenterImage,
   onSaveImageBonus,
   onSaveSpinDuration,
+  onSaveSharePassword,
 }: Props) {
   const [newRole, setNewRole] = useState("");
   const [newWeight, setNewWeight] = useState(5);
   const [perImage, setPerImage] = useState(imageBonusPerImage);
   const [duration, setDuration] = useState(spinDurationSec);
+  const [sharePw, setSharePw] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
   async function add(e: React.FormEvent) {
@@ -185,12 +190,60 @@ export function RoleSettings({
 
       <Separator />
 
-      {/* Role weights */}
+      {/* Share password */}
       <section className="space-y-2">
-        <Label>Role weights (by Discord role ID)</Label>
+        <Label htmlFor="share-pw" className="flex items-center gap-2 text-base">
+          <Lock className="h-4 w-4" />
+          Share link password
+        </Label>
         <p className="text-xs text-muted-foreground">
-          Paste the Discord role ID (right-click role → Copy Role ID with Developer Mode on).
-          Use <code className="rounded bg-muted px-1">@everyone</code> as the default for users
+          Anyone opening the share link will be asked for this password.
+          {hasSharePassword ? " A password is currently set." : " No password is set — link is public."}
+        </p>
+        <div className="flex items-center gap-2">
+          <Input
+            id="share-pw"
+            type="password"
+            placeholder={hasSharePassword ? "•••••••• (set)" : "Enter a password"}
+            value={sharePw}
+            onChange={(e) => setSharePw(e.target.value)}
+          />
+          <Button
+            size="sm"
+            onClick={async () => {
+              await onSaveSharePassword(sharePw);
+              setSharePw("");
+            }}
+            disabled={!sharePw}
+          >
+            Save
+          </Button>
+          {hasSharePassword && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-destructive"
+              onClick={async () => {
+                await onSaveSharePassword("");
+                setSharePw("");
+              }}
+            >
+              Clear
+            </Button>
+          )}
+        </div>
+      </section>
+
+      <Separator />
+
+      {/* Role entries */}
+      <section className="space-y-2">
+        <Label>Role entries</Label>
+        <p className="text-xs text-muted-foreground">
+          Enter the Discord role <strong>name</strong> (case-insensitive) and how many entries
+          users with that role get. If a user has multiple matching roles, the entries{" "}
+          <strong>stack</strong> (sum together). Use{" "}
+          <code className="rounded bg-muted px-1">@everyone</code> as the baseline for users
           with no matching role.
         </p>
         <ul className="space-y-2">
@@ -205,7 +258,7 @@ export function RoleSettings({
         </ul>
         <form onSubmit={add} className="mt-3 flex gap-2">
           <Input
-            placeholder="Role ID (e.g. 1234567890123456789)"
+            placeholder="Role name (e.g. Booster)"
             value={newRole}
             onChange={(e) => setNewRole(e.target.value)}
           />
@@ -216,6 +269,7 @@ export function RoleSettings({
             value={newWeight}
             onChange={(e) => setNewWeight(Number(e.target.value) || 1)}
             className="w-24"
+            title="Entries per user with this role"
           />
           <Button type="submit" size="icon" aria-label="Add role">
             <Plus className="h-4 w-4" />
@@ -243,8 +297,8 @@ function RoleRow({
       <Input
         value={role}
         onChange={(e) => setRole(e.target.value)}
-        className="flex-1 font-mono text-xs"
-        placeholder="Role ID or @everyone"
+        className="flex-1"
+        placeholder="Role name or @everyone"
       />
       <Input
         type="number"

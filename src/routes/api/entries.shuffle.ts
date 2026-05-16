@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { shuffleEntries } from "@/server/store";
+import { shuffleEntries } from "@/lib/store.server";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
