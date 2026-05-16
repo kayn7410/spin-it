@@ -125,6 +125,26 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
   const cx = 250;
   const cy = 250;
   const hubRadius = 60;
+  const outerPadding = 16;
+  const innerPadding = hubRadius + 8;
+  const labelOuterR = radius - outerPadding;
+  const radialSpace = Math.max(20, labelOuterR - innerPadding);
+
+  // Uniform font size across every slice so all names read at the same visual
+  // weight regardless of weight differences. Capped by the thinnest slice's
+  // tangential thickness (so labels stay inside their slice) and clamped to a
+  // comfortable readable range. Long names get squeezed per-slice via
+  // textLength below — never shrunk by varying fontSize.
+  const minSweep = slices.reduce(
+    (m, s) => Math.min(m, s.endAngle - s.startAngle),
+    360,
+  );
+  const minInnerThickness =
+    2 * innerPadding * Math.sin((minSweep * Math.PI) / 360);
+  const uniformFontSize = Math.max(
+    10,
+    Math.min(18, minInnerThickness * 0.82),
+  );
 
   return (
     <div
