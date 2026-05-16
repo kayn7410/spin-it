@@ -153,6 +153,13 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
         }}
       >
         <circle cx={cx} cy={cy} r={radius + 6} fill="var(--card)" />
+        {(() => null)()}
+        {/* Compute a uniform font size across all slices so every name is
+            readable at roughly the same visual weight. The size is bounded
+            by the tightest slice (tangential thickness) and clamped to a
+            comfortable readable range; long names that don't fit radially
+            are squeezed per-slice with textLength below. */}
+        {/* eslint-disable-next-line @typescript-eslint/no-unused-vars */}
         {slices.map((s) => {
           const startRad = ((s.startAngle - 90) * Math.PI) / 180;
           const endRad = ((s.endAngle - 90) * Math.PI) / 180;
