@@ -211,7 +211,7 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
                 dominantBaseline="middle"
                 fill="oklch(0.99 0 0)"
                 stroke="oklch(0.2 0.05 320 / 0.6)"
-                strokeWidth={1}
+                strokeWidth={Math.max(0.4, fontSize / 14)}
                 paintOrder="stroke"
                 fontWeight={800}
                 fontSize={fontSize}
