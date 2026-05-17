@@ -87,6 +87,7 @@ export function readData(): WheelData {
         imageBonusEnabled: parsed.imageBonusEnabled ?? false,
         imageBonusPerImage: parsed.imageBonusPerImage ?? 5,
         spinDurationSec: parsed.spinDurationSec ?? 5,
+        sharePassword: parsed.sharePassword,
       };
     } catch {
       // fall through to memory
