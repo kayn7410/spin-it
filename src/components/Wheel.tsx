@@ -130,21 +130,23 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
   const labelOuterR = radius - outerPadding;
   const radialSpace = Math.max(20, labelOuterR - innerPadding);
 
-  // Per-slice font sizing (wheelofnames.com style): each label is sized by
-  // its own slice's inner arc thickness AND the radial space available for
-  // its name length. Wider slices and shorter names get larger text. Very
-  // long names fall back to textLength squeeze only when even the min size
-  // doesn't fit radially.
-  const MIN_FONT = 8;
-  const MAX_FONT = 26;
-  function sliceFontSize(startAngle: number, endAngle: number, nameLen: number) {
-    const sweep = endAngle - startAngle;
-    // Tangential thickness at the inner edge (chord of the slice at innerPadding).
-    const innerThickness = 2 * innerPadding * Math.sin((sweep * Math.PI) / 360);
-    const maxByArc = innerThickness * 0.72;
-    const maxByRadial = radialSpace / Math.max(1, nameLen) / 0.58;
-    return Math.max(MIN_FONT, Math.min(MAX_FONT, maxByArc, maxByRadial));
-  }
+  // Wheelofnames.com / CrazyTim spin-wheel logic:
+  // ONE uniform font size across every label, sized down only so the LONGEST
+  // name fits the radial space. Slice arc thickness is NOT a constraint —
+  // each label is clipped to its slice path, so narrow slices simply crop
+  // any overflow (same as wheelofnames). This keeps every name at the same
+  // readable weight and avoids the "some huge, some tiny" effect.
+  const MAX_FONT = 30;
+  const CHAR_WIDTH_RATIO = 0.55; // approx avg glyph width per fontSize unit
+  const uniformFontSize = (() => {
+    let f = MAX_FONT;
+    for (const s of slices) {
+      const len = Math.max(1, (s.entry.name || "—").length);
+      const fit = radialSpace / (len * CHAR_WIDTH_RATIO);
+      if (fit < f) f = fit;
+    }
+    return Math.max(6, f);
+  })();
 
   return (
     <div
@@ -173,6 +175,24 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
         }}
       >
         <circle cx={cx} cy={cy} r={radius + 6} fill="var(--card)" />
+        {/* Per-slice clip paths so labels never bleed into adjacent slices */}
+        <defs>
+          {slices.map((s) => {
+            const startRad = ((s.startAngle - 90) * Math.PI) / 180;
+            const endRad = ((s.endAngle - 90) * Math.PI) / 180;
+            const x1 = cx + radius * Math.cos(startRad);
+            const y1 = cy + radius * Math.sin(startRad);
+            const x2 = cx + radius * Math.cos(endRad);
+            const y2 = cy + radius * Math.sin(endRad);
+            const largeArc = s.endAngle - s.startAngle > 180 ? 1 : 0;
+            const d = `M ${cx} ${cy} L ${x1} ${y1} A ${radius} ${radius} 0 ${largeArc} 1 ${x2} ${y2} Z`;
+            return (
+              <clipPath key={`clip-${s.entry.id}`} id={`slice-clip-${s.entry.id}`}>
+                <path d={d} />
+              </clipPath>
+            );
+          })}
+        </defs>
         {slices.map((s) => {
           const startRad = ((s.startAngle - 90) * Math.PI) / 180;
           const endRad = ((s.endAngle - 90) * Math.PI) / 180;
@@ -188,35 +208,30 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
           const lx = cx + labelOuterR * Math.cos(midRad);
           const ly = cy + labelOuterR * Math.sin(midRad);
           const name = s.entry.name || "—";
-          const fontSize = sliceFontSize(s.startAngle, s.endAngle, name.length);
-          // Estimated pixel width at the chosen fontSize. Squeeze with
-          // textLength only when the name doesn't fit radially.
-          const estWidth = name.length * fontSize * 0.55;
-          const needsSqueeze = estWidth > radialSpace;
+          const fontSize = uniformFontSize;
           const textRotation = midAngle - 90;
 
           return (
             <g key={s.entry.id}>
               <path d={path} fill={s.color} stroke="var(--card)" strokeWidth="2" />
-              <text
-                x={lx}
-                y={ly}
-                textAnchor="end"
-                dominantBaseline="middle"
-                fill="oklch(0.99 0 0)"
-                stroke="oklch(0.2 0.05 320 / 0.6)"
-                strokeWidth={Math.max(0.4, fontSize / 14)}
-                paintOrder="stroke"
-                fontWeight={800}
-                fontSize={fontSize}
-                transform={`rotate(${textRotation} ${lx} ${ly})`}
-                {...(needsSqueeze
-                  ? { textLength: radialSpace, lengthAdjust: "spacingAndGlyphs" as const }
-                  : {})}
-                style={{ pointerEvents: "none" }}
-              >
-                {name}
-              </text>
+              <g clipPath={`url(#slice-clip-${s.entry.id})`}>
+                <text
+                  x={lx}
+                  y={ly}
+                  textAnchor="end"
+                  dominantBaseline="middle"
+                  fill="oklch(0.99 0 0)"
+                  stroke="oklch(0.2 0.05 320 / 0.6)"
+                  strokeWidth={Math.max(0.4, fontSize / 14)}
+                  paintOrder="stroke"
+                  fontWeight={800}
+                  fontSize={fontSize}
+                  transform={`rotate(${textRotation} ${lx} ${ly})`}
+                  style={{ pointerEvents: "none" }}
+                >
+                  {name}
+                </text>
+              </g>
             </g>
           );
         })}
