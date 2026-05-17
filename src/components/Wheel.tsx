@@ -130,21 +130,21 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
   const labelOuterR = radius - outerPadding;
   const radialSpace = Math.max(20, labelOuterR - innerPadding);
 
-  // Uniform font size across every slice so all names read at the same visual
-  // weight regardless of weight differences. Capped by the thinnest slice's
-  // tangential thickness (so labels stay inside their slice) and clamped to a
-  // comfortable readable range. Long names get squeezed per-slice via
-  // textLength below — never shrunk by varying fontSize.
-  const minSweep = slices.reduce(
-    (m, s) => Math.min(m, s.endAngle - s.startAngle),
-    360,
-  );
-  const minInnerThickness =
-    2 * innerPadding * Math.sin((minSweep * Math.PI) / 360);
-  const uniformFontSize = Math.max(
-    10,
-    Math.min(18, minInnerThickness * 0.82),
-  );
+  // Per-slice font sizing (wheelofnames.com style): each label is sized by
+  // its own slice's inner arc thickness AND the radial space available for
+  // its name length. Wider slices and shorter names get larger text. Very
+  // long names fall back to textLength squeeze only when even the min size
+  // doesn't fit radially.
+  const MIN_FONT = 8;
+  const MAX_FONT = 26;
+  function sliceFontSize(startAngle: number, endAngle: number, nameLen: number) {
+    const sweep = endAngle - startAngle;
+    // Tangential thickness at the inner edge (chord of the slice at innerPadding).
+    const innerThickness = 2 * innerPadding * Math.sin((sweep * Math.PI) / 360);
+    const maxByArc = innerThickness * 0.72;
+    const maxByRadial = radialSpace / Math.max(1, nameLen) / 0.58;
+    return Math.max(MIN_FONT, Math.min(MAX_FONT, maxByArc, maxByRadial));
+  }
 
   return (
     <div
