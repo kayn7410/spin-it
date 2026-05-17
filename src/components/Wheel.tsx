@@ -188,7 +188,7 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
           const lx = cx + labelOuterR * Math.cos(midRad);
           const ly = cy + labelOuterR * Math.sin(midRad);
           const name = s.entry.name || "—";
-          const fontSize = uniformFontSize;
+          const fontSize = sliceFontSize(s.startAngle, s.endAngle, name.length);
           // Estimated pixel width at the chosen fontSize. Squeeze with
           // textLength only when the name doesn't fit radially.
           const estWidth = name.length * fontSize * 0.55;
