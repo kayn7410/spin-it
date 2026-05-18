@@ -28,9 +28,18 @@ const SLICE_COLORS = [
 // Idle drift: slow continuous rotation while not spinning (deg/sec).
 const IDLE_DEG_PER_SEC = 8;
 
+function getCssColor(variableName: string, fallback: string) {
+  if (typeof window === "undefined") return fallback;
+  const value = getComputedStyle(document.documentElement).getPropertyValue(variableName).trim();
+  return value || fallback;
+}
+
 export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, spinDurationSec = 5 }: Props) {
   const [rotation, setRotation] = useState(0);
   const [transitioning, setTransitioning] = useState(false);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const [canvasSize, setCanvasSize] = useState(500);
   const rafRef = useRef<number | null>(null);
   const lastTickRef = useRef<number>(0);
   const rotationRef = useRef(0);
@@ -74,6 +83,141 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
       rafRef.current = null;
     };
   }, [spinning, transitioning, slices.length]);
+
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const resize = () => setCanvasSize(Math.max(260, Math.floor(el.getBoundingClientRect().width)));
+    resize();
+    const observer = new ResizeObserver(resize);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || slices.length === 0) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    let cancelled = false;
+    let centerImg: HTMLImageElement | null = null;
+
+    const draw = () => {
+      if (cancelled) return;
+      const dpr = window.devicePixelRatio || 1;
+      const cssSize = canvasSize;
+      canvas.width = Math.round(cssSize * dpr);
+      canvas.height = Math.round(cssSize * dpr);
+      canvas.style.width = `${cssSize}px`;
+      canvas.style.height = `${cssSize}px`;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, cssSize, cssSize);
+
+      const cx = cssSize / 2;
+      const cy = cssSize / 2;
+      const radius = cssSize * 0.48;
+      const borderWidth = Math.max(2, cssSize * 0.006);
+      const lineWidth = Math.max(1.5, cssSize * 0.004);
+      const hubRadius = cssSize * 0.12;
+      const labelRadius = radius * 0.85;
+      const labelMaxWidth = radius * (0.85 - 0.2);
+      const maxFont = Math.min(30, cssSize * 0.06);
+
+      ctx.save();
+      ctx.textBaseline = "middle";
+      ctx.textAlign = "right";
+      ctx.font = `1px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+      let labelFontSize = maxFont;
+      for (const s of slices) {
+        const text = (s.entry.name || "—").trim();
+        if (!text) continue;
+        const measured = Math.max(1, ctx.measureText(text).width);
+        labelFontSize = Math.min(labelFontSize, labelMaxWidth / measured);
+      }
+      labelFontSize = Math.max(9, labelFontSize);
+      ctx.restore();
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius + borderWidth * 2, 0, Math.PI * 2);
+      ctx.fillStyle = getCssColor("--card", "#111827");
+      ctx.fill();
+
+      for (const s of slices) {
+        const start = ((s.startAngle - 90) * Math.PI) / 180;
+        const end = ((s.endAngle - 90) * Math.PI) / 180;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.arc(cx, cy, radius, start, end);
+        ctx.closePath();
+        ctx.fillStyle = s.color.startsWith("var(") ? getCssColor(s.color.slice(4, -1), "#7c3aed") : s.color;
+        ctx.fill();
+        ctx.strokeStyle = getCssColor("--card", "#111827");
+        ctx.lineWidth = lineWidth;
+        ctx.stroke();
+      }
+
+      ctx.font = `800 ${labelFontSize}px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+      ctx.textBaseline = "middle";
+      ctx.textAlign = "right";
+      ctx.lineJoin = "round";
+      ctx.lineWidth = Math.max(2, labelFontSize * 0.14);
+      ctx.strokeStyle = "oklch(0.2 0.05 320 / 0.65)";
+      ctx.fillStyle = "oklch(0.99 0 0)";
+
+      for (const s of slices) {
+        const text = (s.entry.name || "—").trim();
+        if (!text) continue;
+        const start = ((s.startAngle - 90) * Math.PI) / 180;
+        const end = ((s.endAngle - 90) * Math.PI) / 180;
+        const mid = ((s.startAngle + (s.endAngle - s.startAngle) / 2 - 90) * Math.PI) / 180;
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.arc(cx, cy, radius - lineWidth / 2, start, end);
+        ctx.closePath();
+        ctx.clip();
+        ctx.translate(cx + Math.cos(mid) * labelRadius, cy + Math.sin(mid) * labelRadius);
+        ctx.rotate(mid);
+        ctx.strokeText(text, 0, 0);
+        ctx.fillText(text, 0, 0);
+        ctx.restore();
+      }
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, hubRadius, 0, Math.PI * 2);
+      ctx.fillStyle = getCssColor("--card", "#111827");
+      ctx.fill();
+      ctx.strokeStyle = getCssColor("--primary", "#60a5fa");
+      ctx.lineWidth = Math.max(4, cssSize * 0.008);
+      ctx.stroke();
+
+      if (centerImg?.complete && centerImg.naturalWidth > 0) {
+        const r = hubRadius - Math.max(4, cssSize * 0.008);
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.clip();
+        const scale = Math.max((r * 2) / centerImg.naturalWidth, (r * 2) / centerImg.naturalHeight);
+        const w = centerImg.naturalWidth * scale;
+        const h = centerImg.naturalHeight * scale;
+        ctx.drawImage(centerImg, cx - w / 2, cy - h / 2, w, h);
+        ctx.restore();
+      }
+    };
+
+    if (centerImage) {
+      centerImg = new Image();
+      centerImg.onload = draw;
+      centerImg.src = centerImage;
+    }
+    draw();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [canvasSize, centerImage, slices]);
 
   function spin() {
     if (spinning || transitioning || slices.length === 0) return;
@@ -121,35 +265,9 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
     );
   }
 
-  const radius = 240;
-  const cx = 250;
-  const cy = 250;
-  const hubRadius = 60;
-  const outerPadding = 16;
-  const innerPadding = hubRadius + 8;
-  const labelOuterR = radius - outerPadding;
-  const radialSpace = Math.max(20, labelOuterR - innerPadding);
-
-  // Wheelofnames.com / CrazyTim spin-wheel logic:
-  // ONE uniform font size across every label, sized down only so the LONGEST
-  // name fits the radial space. Slice arc thickness is NOT a constraint —
-  // each label is clipped to its slice path, so narrow slices simply crop
-  // any overflow (same as wheelofnames). This keeps every name at the same
-  // readable weight and avoids the "some huge, some tiny" effect.
-  const MAX_FONT = 30;
-  const CHAR_WIDTH_RATIO = 0.55; // approx avg glyph width per fontSize unit
-  const uniformFontSize = (() => {
-    let f = MAX_FONT;
-    for (const s of slices) {
-      const len = Math.max(1, (s.entry.name || "—").length);
-      const fit = radialSpace / (len * CHAR_WIDTH_RATIO);
-      if (fit < f) f = fit;
-    }
-    return Math.max(6, f);
-  })();
-
   return (
     <div
+      ref={wrapRef}
       className="relative aspect-square w-full"
       style={{ width: "min(92vw, calc(100vh - 200px))", maxWidth: "100%" }}
     >
@@ -164,8 +282,8 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
         }}
         aria-hidden
       />
-      <svg
-        viewBox="0 0 500 500"
+      <canvas
+        ref={canvasRef}
         className="h-full w-full drop-shadow-2xl"
         style={{
           transform: `rotate(${rotation}deg)`,
@@ -173,94 +291,8 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
             ? `transform ${spinDurationSec}s cubic-bezier(0.17, 0.67, 0.21, 1)`
             : "none",
         }}
-      >
-        <circle cx={cx} cy={cy} r={radius + 6} fill="var(--card)" />
-        {/* Per-slice clip paths so labels never bleed into adjacent slices */}
-        <defs>
-          {slices.map((s) => {
-            const startRad = ((s.startAngle - 90) * Math.PI) / 180;
-            const endRad = ((s.endAngle - 90) * Math.PI) / 180;
-            const x1 = cx + radius * Math.cos(startRad);
-            const y1 = cy + radius * Math.sin(startRad);
-            const x2 = cx + radius * Math.cos(endRad);
-            const y2 = cy + radius * Math.sin(endRad);
-            const largeArc = s.endAngle - s.startAngle > 180 ? 1 : 0;
-            const d = `M ${cx} ${cy} L ${x1} ${y1} A ${radius} ${radius} 0 ${largeArc} 1 ${x2} ${y2} Z`;
-            return (
-              <clipPath key={`clip-${s.entry.id}`} id={`slice-clip-${s.entry.id}`}>
-                <path d={d} />
-              </clipPath>
-            );
-          })}
-        </defs>
-        {slices.map((s) => {
-          const startRad = ((s.startAngle - 90) * Math.PI) / 180;
-          const endRad = ((s.endAngle - 90) * Math.PI) / 180;
-          const x1 = cx + radius * Math.cos(startRad);
-          const y1 = cy + radius * Math.sin(startRad);
-          const x2 = cx + radius * Math.cos(endRad);
-          const y2 = cy + radius * Math.sin(endRad);
-          const largeArc = s.endAngle - s.startAngle > 180 ? 1 : 0;
-          const path = `M ${cx} ${cy} L ${x1} ${y1} A ${radius} ${radius} 0 ${largeArc} 1 ${x2} ${y2} Z`;
-
-          const midAngle = (s.startAngle + s.endAngle) / 2;
-          const midRad = ((midAngle - 90) * Math.PI) / 180;
-          const lx = cx + labelOuterR * Math.cos(midRad);
-          const ly = cy + labelOuterR * Math.sin(midRad);
-          const name = s.entry.name || "—";
-          const fontSize = uniformFontSize;
-          const textRotation = midAngle - 90;
-
-          return (
-            <g key={s.entry.id}>
-              <path d={path} fill={s.color} stroke="var(--card)" strokeWidth="2" />
-              <g clipPath={`url(#slice-clip-${s.entry.id})`}>
-                <text
-                  x={lx}
-                  y={ly}
-                  textAnchor="end"
-                  dominantBaseline="middle"
-                  fill="oklch(0.99 0 0)"
-                  stroke="oklch(0.2 0.05 320 / 0.6)"
-                  strokeWidth={Math.max(0.4, fontSize / 14)}
-                  paintOrder="stroke"
-                  fontWeight={800}
-                  fontSize={fontSize}
-                  transform={`rotate(${textRotation} ${lx} ${ly})`}
-                  style={{ pointerEvents: "none" }}
-                >
-                  {name}
-                </text>
-              </g>
-            </g>
-          );
-        })}
-        {/* Center hub with optional image */}
-        <defs>
-          <clipPath id="wheel-center-clip">
-            <circle cx={cx} cy={cy} r={hubRadius - 4} />
-          </clipPath>
-        </defs>
-        <circle
-          cx={cx}
-          cy={cy}
-          r={hubRadius}
-          fill="var(--card)"
-          stroke="var(--primary)"
-          strokeWidth="4"
-        />
-        {centerImage && (
-          <image
-            href={centerImage}
-            x={cx - (hubRadius - 4)}
-            y={cy - (hubRadius - 4)}
-            width={(hubRadius - 4) * 2}
-            height={(hubRadius - 4) * 2}
-            clipPath="url(#wheel-center-clip)"
-            preserveAspectRatio="xMidYMid slice"
-          />
-        )}
-      </svg>
+        aria-label="Giveaway wheel"
+      />
 
       <button
         onClick={spin}
