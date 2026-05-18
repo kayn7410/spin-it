@@ -28,6 +28,12 @@ const SLICE_COLORS = [
 // Idle drift: slow continuous rotation while not spinning (deg/sec).
 const IDLE_DEG_PER_SEC = 8;
 
+function getCssColor(variableName: string, fallback: string) {
+  if (typeof window === "undefined") return fallback;
+  const value = getComputedStyle(document.documentElement).getPropertyValue(variableName).trim();
+  return value || fallback;
+}
+
 export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, spinDurationSec = 5 }: Props) {
   const [rotation, setRotation] = useState(0);
   const [transitioning, setTransitioning] = useState(false);
