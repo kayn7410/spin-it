@@ -27,6 +27,8 @@ const SLICE_COLORS = [
 
 // Idle drift: slow continuous rotation while not spinning (deg/sec).
 const IDLE_DEG_PER_SEC = 8;
+const FONT_STACK = `ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+const MAX_LABEL_LENGTH = 18;
 
 function getCssColor(variableName: string, fallback: string) {
   if (typeof window === "undefined") return fallback;
@@ -34,8 +36,79 @@ function getCssColor(variableName: string, fallback: string) {
   return value || fallback;
 }
 
-function clamp(min: number, value: number, max: number) {
-  return Math.min(max, Math.max(min, value));
+function shortenWheelText(text: string) {
+  return text.length > MAX_LABEL_LENGTH ? `${text.slice(0, MAX_LABEL_LENGTH - 1)}…` : text;
+}
+
+function boxFits(halfAngle: number, outerRadius: number, innerRadius: number, width: number, height: number) {
+  const sin = Math.sin(halfAngle);
+  if (sin <= 0.0001) return false;
+  const safeOuterX = Math.sqrt(Math.max(0, outerRadius ** 2 - (height / 2) ** 2));
+  const safeInnerX = Math.max((height * Math.cos(halfAngle)) / (2 * sin), innerRadius);
+  return safeOuterX - safeInnerX >= width;
+}
+
+function textFits(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  fontSize: number,
+  outerRadius: number,
+  innerRadius: number,
+  sliceRadians: number,
+) {
+  if (!text) return true;
+  ctx.font = `${fontSize}px ${FONT_STACK}`;
+  const width = ctx.measureText(` ${shortenWheelText(text)} `).width;
+  return boxFits(sliceRadians / 2, outerRadius, innerRadius, width, fontSize + Math.max(4, fontSize * 0.18));
+}
+
+function getOptimalFontSize(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  outerRadius: number,
+  innerRadius: number,
+  sliceRadians: number,
+) {
+  let min = 3;
+  let max = 200;
+  let fontSize = 10;
+  while (Math.abs(max - min) >= 2) {
+    fontSize = Math.round((min + max) / 2);
+    if (textFits(ctx, text, fontSize, outerRadius, innerRadius, sliceRadians)) min = fontSize;
+    else max = fontSize;
+  }
+  return fontSize;
+}
+
+function getStops(sizes: number[]) {
+  const sorted = [...sizes].sort((a, b) => a - b);
+  if (sorted.length === 0) return [10];
+  const stops = [sorted[0]];
+  let base = sorted[0];
+  for (const size of sorted.slice(1)) {
+    if (size > base * 2) {
+      stops.push(size);
+      base = size;
+    }
+  }
+  return stops;
+}
+
+function fontSizeForSlice(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  allTexts: string[],
+  outerRadius: number,
+  innerRadius: number,
+  sliceRadians: number,
+) {
+  const sizes = allTexts.map((t) => getOptimalFontSize(ctx, t, outerRadius, innerRadius, sliceRadians));
+  const stops = getStops(sizes);
+  const optimal = getOptimalFontSize(ctx, text, outerRadius, innerRadius, sliceRadians);
+  for (let i = stops.length - 1; i >= 0; i--) {
+    if (stops[i] <= optimal) return stops[i];
+  }
+  return stops[0];
 }
 
 export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, spinDurationSec = 5 }: Props) {
