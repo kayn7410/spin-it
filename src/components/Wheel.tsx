@@ -200,12 +200,9 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
       const borderWidth = Math.max(2, cssSize * 0.006);
       const lineWidth = Math.max(1.5, cssSize * 0.004);
       const hubRadius = cssSize * 0.12;
-      const outerTextRadius = radius - Math.max(12, cssSize * 0.032);
-      const innerTextRadius = hubRadius + Math.max(14, cssSize * 0.03);
-      const labelInset = Math.max(3, cssSize * 0.008);
-      const labelMaxWidth = Math.max(24, outerTextRadius - innerTextRadius - labelInset);
-      const averageArcWidth = (2 * Math.PI * outerTextRadius) / Math.max(1, slices.length);
-      const labelFontSize = clamp(9, averageArcWidth * 0.72, Math.min(30, cssSize * 0.058));
+      const labelOuterRadius = radius - Math.max(8, cssSize * 0.018);
+      const labelInnerRadius = hubRadius + Math.max(10, cssSize * 0.022);
+      const allTexts = slices.map((s) => (s.entry.name || "—").trim());
 
       ctx.beginPath();
       ctx.arc(cx, cy, radius + borderWidth * 2, 0, Math.PI * 2);
@@ -226,11 +223,9 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
         ctx.stroke();
       }
 
-      ctx.font = `900 ${labelFontSize}px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
       ctx.textBaseline = "middle";
-      ctx.textAlign = "left";
+      ctx.textAlign = "end";
       ctx.lineJoin = "round";
-      ctx.lineWidth = Math.max(2, labelFontSize * 0.16);
       ctx.strokeStyle = getCssColor("--wheel-label-stroke", "#111827");
       ctx.fillStyle = getCssColor("--wheel-label", "#ffffff");
 
@@ -241,6 +236,11 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
         const end = ((s.endAngle - 90) * Math.PI) / 180;
         const mid = ((s.startAngle + (s.endAngle - s.startAngle) / 2 - 90) * Math.PI) / 180;
         const sweep = Math.max(0.0001, end - start);
+        const displayText = ` ${shortenWheelText(text)} `;
+        const fontSize = Math.min(
+          fontSizeForSlice(ctx, text, allTexts, labelOuterRadius, labelInnerRadius, sweep),
+          Math.min(34, cssSize * 0.062),
+        );
         const clipGap = Math.min(sweep * 0.18, Math.max(0.001, lineWidth / radius));
         const clipStart = start + clipGap;
         const clipEnd = end - clipGap;
@@ -253,9 +253,10 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
         ctx.clip();
         ctx.translate(cx, cy);
         ctx.rotate(mid);
-        ctx.translate(innerTextRadius + labelInset, 0);
-        ctx.strokeText(text, 0, 0, labelMaxWidth);
-        ctx.fillText(text, 0, 0, labelMaxWidth);
+        ctx.font = `900 ${fontSize}px ${FONT_STACK}`;
+        ctx.lineWidth = Math.max(2, fontSize * 0.16);
+        ctx.strokeText(displayText, labelOuterRadius, 0);
+        ctx.fillText(displayText, labelOuterRadius, 0);
         ctx.restore();
       }
 
