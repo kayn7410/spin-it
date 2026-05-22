@@ -203,6 +203,18 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
       const labelOuterRadius = radius - Math.max(8, cssSize * 0.018);
       const labelInnerRadius = hubRadius + Math.max(10, cssSize * 0.022);
       const allTexts = slices.map((s) => (s.entry.name || "—").trim());
+      const fontSizeCache = new Map<string, number>();
+      const getFontSize = (text: string, sweep: number) => {
+        const key = `${text}\u0000${sweep.toFixed(6)}`;
+        const cached = fontSizeCache.get(key);
+        if (cached) return cached;
+        const size = Math.min(
+          fontSizeForSlice(ctx, text, allTexts, labelOuterRadius, labelInnerRadius, sweep),
+          Math.min(34, cssSize * 0.062),
+        );
+        fontSizeCache.set(key, size);
+        return size;
+      };
 
       ctx.beginPath();
       ctx.arc(cx, cy, radius + borderWidth * 2, 0, Math.PI * 2);
@@ -237,10 +249,7 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
         const mid = ((s.startAngle + (s.endAngle - s.startAngle) / 2 - 90) * Math.PI) / 180;
         const sweep = Math.max(0.0001, end - start);
         const displayText = ` ${shortenWheelText(text)} `;
-        const fontSize = Math.min(
-          fontSizeForSlice(ctx, text, allTexts, labelOuterRadius, labelInnerRadius, sweep),
-          Math.min(34, cssSize * 0.062),
-        );
+        const fontSize = getFontSize(text, sweep);
         const clipGap = Math.min(sweep * 0.18, Math.max(0.001, lineWidth / radius));
         const clipStart = start + clipGap;
         const clipEnd = end - clipGap;
