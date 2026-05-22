@@ -27,11 +27,88 @@ const SLICE_COLORS = [
 
 // Idle drift: slow continuous rotation while not spinning (deg/sec).
 const IDLE_DEG_PER_SEC = 8;
+const FONT_STACK = `ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+const MAX_LABEL_LENGTH = 18;
 
 function getCssColor(variableName: string, fallback: string) {
   if (typeof window === "undefined") return fallback;
   const value = getComputedStyle(document.documentElement).getPropertyValue(variableName).trim();
   return value || fallback;
+}
+
+function shortenWheelText(text: string) {
+  return text.length > MAX_LABEL_LENGTH ? `${text.slice(0, MAX_LABEL_LENGTH - 1)}…` : text;
+}
+
+function boxFits(halfAngle: number, outerRadius: number, innerRadius: number, width: number, height: number) {
+  const sin = Math.sin(halfAngle);
+  if (sin <= 0.0001) return false;
+  const safeOuterX = Math.sqrt(Math.max(0, outerRadius ** 2 - (height / 2) ** 2));
+  const safeInnerX = Math.max((height * Math.cos(halfAngle)) / (2 * sin), innerRadius);
+  return safeOuterX - safeInnerX >= width;
+}
+
+function textFits(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  fontSize: number,
+  outerRadius: number,
+  innerRadius: number,
+  sliceRadians: number,
+) {
+  if (!text) return true;
+  ctx.font = `${fontSize}px ${FONT_STACK}`;
+  const width = ctx.measureText(` ${shortenWheelText(text)} `).width;
+  return boxFits(sliceRadians / 2, outerRadius, innerRadius, width, fontSize + Math.max(4, fontSize * 0.18));
+}
+
+function getOptimalFontSize(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  outerRadius: number,
+  innerRadius: number,
+  sliceRadians: number,
+) {
+  let min = 3;
+  let max = 200;
+  let fontSize = 10;
+  while (Math.abs(max - min) >= 2) {
+    fontSize = Math.round((min + max) / 2);
+    if (textFits(ctx, text, fontSize, outerRadius, innerRadius, sliceRadians)) min = fontSize;
+    else max = fontSize;
+  }
+  return fontSize;
+}
+
+function getStops(sizes: number[]) {
+  const sorted = [...sizes].sort((a, b) => a - b);
+  if (sorted.length === 0) return [10];
+  const stops = [sorted[0]];
+  let base = sorted[0];
+  for (const size of sorted.slice(1)) {
+    if (size > base * 2) {
+      stops.push(size);
+      base = size;
+    }
+  }
+  return stops;
+}
+
+function fontSizeForSlice(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  allTexts: string[],
+  outerRadius: number,
+  innerRadius: number,
+  sliceRadians: number,
+) {
+  const sizes = allTexts.map((t) => getOptimalFontSize(ctx, t, outerRadius, innerRadius, sliceRadians));
+  const stops = getStops(sizes);
+  const optimal = getOptimalFontSize(ctx, text, outerRadius, innerRadius, sliceRadians);
+  for (let i = stops.length - 1; i >= 0; i--) {
+    if (stops[i] <= optimal) return stops[i];
+  }
+  return stops[0];
 }
 
 export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, spinDurationSec = 5 }: Props) {
@@ -87,7 +164,10 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
   useEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
-    const resize = () => setCanvasSize(Math.max(260, Math.floor(el.getBoundingClientRect().width)));
+    const resize = () => {
+      const rect = el.getBoundingClientRect();
+      setCanvasSize(Math.max(260, Math.floor(Math.min(rect.width, rect.height || rect.width))));
+    };
     resize();
     const observer = new ResizeObserver(resize);
     observer.observe(el);
@@ -109,8 +189,8 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
       const cssSize = canvasSize;
       canvas.width = Math.round(cssSize * dpr);
       canvas.height = Math.round(cssSize * dpr);
-      canvas.style.width = `${cssSize}px`;
-      canvas.style.height = `${cssSize}px`;
+      canvas.style.width = "100%";
+      canvas.style.height = "100%";
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, cssSize, cssSize);
 
@@ -120,23 +200,21 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
       const borderWidth = Math.max(2, cssSize * 0.006);
       const lineWidth = Math.max(1.5, cssSize * 0.004);
       const hubRadius = cssSize * 0.12;
-      const labelRadius = radius * 0.85;
-      const labelMaxWidth = radius * (0.85 - 0.2);
-      const maxFont = Math.min(30, cssSize * 0.06);
-
-      ctx.save();
-      ctx.textBaseline = "middle";
-      ctx.textAlign = "right";
-      ctx.font = `1px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
-      let labelFontSize = maxFont;
-      for (const s of slices) {
-        const text = (s.entry.name || "—").trim();
-        if (!text) continue;
-        const measured = Math.max(1, ctx.measureText(text).width);
-        labelFontSize = Math.min(labelFontSize, labelMaxWidth / measured);
-      }
-      labelFontSize = Math.max(9, labelFontSize);
-      ctx.restore();
+      const labelOuterRadius = radius - Math.max(8, cssSize * 0.018);
+      const labelInnerRadius = hubRadius + Math.max(10, cssSize * 0.022);
+      const allTexts = slices.map((s) => (s.entry.name || "—").trim());
+      const fontSizeCache = new Map<string, number>();
+      const getFontSize = (text: string, sweep: number) => {
+        const key = `${text}\u0000${sweep.toFixed(6)}`;
+        const cached = fontSizeCache.get(key);
+        if (cached) return cached;
+        const size = Math.min(
+          fontSizeForSlice(ctx, text, allTexts, labelOuterRadius, labelInnerRadius, sweep),
+          Math.min(34, cssSize * 0.062),
+        );
+        fontSizeCache.set(key, size);
+        return size;
+      };
 
       ctx.beginPath();
       ctx.arc(cx, cy, radius + borderWidth * 2, 0, Math.PI * 2);
@@ -157,13 +235,11 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
         ctx.stroke();
       }
 
-      ctx.font = `800 ${labelFontSize}px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
       ctx.textBaseline = "middle";
-      ctx.textAlign = "right";
+      ctx.textAlign = "end";
       ctx.lineJoin = "round";
-      ctx.lineWidth = Math.max(2, labelFontSize * 0.14);
-      ctx.strokeStyle = "oklch(0.2 0.05 320 / 0.65)";
-      ctx.fillStyle = "oklch(0.99 0 0)";
+      ctx.strokeStyle = getCssColor("--wheel-label-stroke", "#111827");
+      ctx.fillStyle = getCssColor("--wheel-label", "#ffffff");
 
       for (const s of slices) {
         const text = (s.entry.name || "—").trim();
@@ -171,17 +247,25 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
         const start = ((s.startAngle - 90) * Math.PI) / 180;
         const end = ((s.endAngle - 90) * Math.PI) / 180;
         const mid = ((s.startAngle + (s.endAngle - s.startAngle) / 2 - 90) * Math.PI) / 180;
+        const sweep = Math.max(0.0001, end - start);
+        const displayText = ` ${shortenWheelText(text)} `;
+        const fontSize = getFontSize(text, sweep);
+        const clipGap = Math.min(sweep * 0.18, Math.max(0.001, lineWidth / radius));
+        const clipStart = start + clipGap;
+        const clipEnd = end - clipGap;
 
         ctx.save();
         ctx.beginPath();
-        ctx.moveTo(cx, cy);
-        ctx.arc(cx, cy, radius - lineWidth / 2, start, end);
+        ctx.arc(cx, cy, radius - lineWidth / 2, clipStart, clipEnd);
+        ctx.arc(cx, cy, hubRadius + lineWidth * 2, clipEnd, clipStart, true);
         ctx.closePath();
         ctx.clip();
-        ctx.translate(cx + Math.cos(mid) * labelRadius, cy + Math.sin(mid) * labelRadius);
+        ctx.translate(cx, cy);
         ctx.rotate(mid);
-        ctx.strokeText(text, 0, 0);
-        ctx.fillText(text, 0, 0);
+        ctx.font = `900 ${fontSize}px ${FONT_STACK}`;
+        ctx.lineWidth = Math.max(2, fontSize * 0.16);
+        ctx.strokeText(displayText, labelOuterRadius, 0);
+        ctx.fillText(displayText, labelOuterRadius, 0);
         ctx.restore();
       }
 
@@ -268,8 +352,8 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
   return (
     <div
       ref={wrapRef}
-      className="relative aspect-square w-full"
-      style={{ width: "min(92vw, calc(100vh - 200px))", maxWidth: "100%" }}
+      className="relative aspect-square shrink-0"
+      style={{ width: "min(94vw, calc(100dvh - 128px), 920px)", maxWidth: "100%" }}
     >
       {/* Pointer */}
       <div
@@ -284,9 +368,10 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
       />
       <canvas
         ref={canvasRef}
-        className="h-full w-full drop-shadow-2xl"
+        className="absolute inset-0 block h-full w-full drop-shadow-2xl"
         style={{
           transform: `rotate(${rotation}deg)`,
+          transformOrigin: "50% 50%",
           transition: transitioning
             ? `transform ${spinDurationSec}s cubic-bezier(0.17, 0.67, 0.21, 1)`
             : "none",

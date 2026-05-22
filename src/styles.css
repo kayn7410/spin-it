@@ -82,6 +82,8 @@
   --wheel-6: oklch(0.45 0.13 300); /* dark purple */
   --wheel-7: oklch(0.72 0.08 355); /* blush */
   --wheel-8: oklch(0.60 0.10 325); /* muted plum */
+  --wheel-label: oklch(0.99 0 0);
+  --wheel-label-stroke: oklch(0.16 0.03 260 / 78%);
 }
 
 .dark {
