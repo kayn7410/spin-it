@@ -34,6 +34,10 @@ function getCssColor(variableName: string, fallback: string) {
   return value || fallback;
 }
 
+function clamp(min: number, value: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
 export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, spinDurationSec = 5 }: Props) {
   const [rotation, setRotation] = useState(0);
   const [transitioning, setTransitioning] = useState(false);
@@ -87,7 +91,10 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
   useEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
-    const resize = () => setCanvasSize(Math.max(260, Math.floor(el.getBoundingClientRect().width)));
+    const resize = () => {
+      const rect = el.getBoundingClientRect();
+      setCanvasSize(Math.max(260, Math.floor(Math.min(rect.width, rect.height || rect.width))));
+    };
     resize();
     const observer = new ResizeObserver(resize);
     observer.observe(el);
@@ -109,8 +116,8 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
       const cssSize = canvasSize;
       canvas.width = Math.round(cssSize * dpr);
       canvas.height = Math.round(cssSize * dpr);
-      canvas.style.width = `${cssSize}px`;
-      canvas.style.height = `${cssSize}px`;
+      canvas.style.width = "100%";
+      canvas.style.height = "100%";
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, cssSize, cssSize);
 
@@ -120,23 +127,12 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
       const borderWidth = Math.max(2, cssSize * 0.006);
       const lineWidth = Math.max(1.5, cssSize * 0.004);
       const hubRadius = cssSize * 0.12;
-      const labelRadius = radius * 0.85;
-      const labelMaxWidth = radius * (0.85 - 0.2);
-      const maxFont = Math.min(30, cssSize * 0.06);
-
-      ctx.save();
-      ctx.textBaseline = "middle";
-      ctx.textAlign = "right";
-      ctx.font = `1px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
-      let labelFontSize = maxFont;
-      for (const s of slices) {
-        const text = (s.entry.name || "—").trim();
-        if (!text) continue;
-        const measured = Math.max(1, ctx.measureText(text).width);
-        labelFontSize = Math.min(labelFontSize, labelMaxWidth / measured);
-      }
-      labelFontSize = Math.max(9, labelFontSize);
-      ctx.restore();
+      const outerTextRadius = radius - Math.max(12, cssSize * 0.032);
+      const innerTextRadius = hubRadius + Math.max(14, cssSize * 0.03);
+      const labelInset = Math.max(3, cssSize * 0.008);
+      const labelMaxWidth = Math.max(24, outerTextRadius - innerTextRadius - labelInset);
+      const averageArcWidth = (2 * Math.PI * outerTextRadius) / Math.max(1, slices.length);
+      const labelFontSize = clamp(9, averageArcWidth * 0.72, Math.min(30, cssSize * 0.058));
 
       ctx.beginPath();
       ctx.arc(cx, cy, radius + borderWidth * 2, 0, Math.PI * 2);
@@ -157,13 +153,13 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
         ctx.stroke();
       }
 
-      ctx.font = `800 ${labelFontSize}px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+      ctx.font = `900 ${labelFontSize}px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
       ctx.textBaseline = "middle";
-      ctx.textAlign = "right";
+      ctx.textAlign = "left";
       ctx.lineJoin = "round";
-      ctx.lineWidth = Math.max(2, labelFontSize * 0.14);
-      ctx.strokeStyle = "oklch(0.2 0.05 320 / 0.65)";
-      ctx.fillStyle = "oklch(0.99 0 0)";
+      ctx.lineWidth = Math.max(2, labelFontSize * 0.16);
+      ctx.strokeStyle = getCssColor("--wheel-label-stroke", "#111827");
+      ctx.fillStyle = getCssColor("--wheel-label", "#ffffff");
 
       for (const s of slices) {
         const text = (s.entry.name || "—").trim();
@@ -171,17 +167,22 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
         const start = ((s.startAngle - 90) * Math.PI) / 180;
         const end = ((s.endAngle - 90) * Math.PI) / 180;
         const mid = ((s.startAngle + (s.endAngle - s.startAngle) / 2 - 90) * Math.PI) / 180;
+        const sweep = Math.max(0.0001, end - start);
+        const clipGap = Math.min(sweep * 0.18, Math.max(0.001, lineWidth / radius));
+        const clipStart = start + clipGap;
+        const clipEnd = end - clipGap;
 
         ctx.save();
         ctx.beginPath();
-        ctx.moveTo(cx, cy);
-        ctx.arc(cx, cy, radius - lineWidth / 2, start, end);
+        ctx.arc(cx, cy, radius - lineWidth / 2, clipStart, clipEnd);
+        ctx.arc(cx, cy, hubRadius + lineWidth * 2, clipEnd, clipStart, true);
         ctx.closePath();
         ctx.clip();
-        ctx.translate(cx + Math.cos(mid) * labelRadius, cy + Math.sin(mid) * labelRadius);
+        ctx.translate(cx, cy);
         ctx.rotate(mid);
-        ctx.strokeText(text, 0, 0);
-        ctx.fillText(text, 0, 0);
+        ctx.translate(innerTextRadius + labelInset, 0);
+        ctx.strokeText(text, 0, 0, labelMaxWidth);
+        ctx.fillText(text, 0, 0, labelMaxWidth);
         ctx.restore();
       }
 
@@ -268,8 +269,8 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
   return (
     <div
       ref={wrapRef}
-      className="relative aspect-square w-full"
-      style={{ width: "min(92vw, calc(100vh - 200px))", maxWidth: "100%" }}
+      className="relative aspect-square shrink-0"
+      style={{ width: "min(94vw, calc(100dvh - 128px), 920px)", maxWidth: "100%" }}
     >
       {/* Pointer */}
       <div
@@ -284,9 +285,10 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
       />
       <canvas
         ref={canvasRef}
-        className="h-full w-full drop-shadow-2xl"
+        className="absolute inset-0 block h-full w-full drop-shadow-2xl"
         style={{
           transform: `rotate(${rotation}deg)`,
+          transformOrigin: "50% 50%",
           transition: transitioning
             ? `transform ${spinDurationSec}s cubic-bezier(0.17, 0.67, 0.21, 1)`
             : "none",
