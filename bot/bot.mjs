@@ -248,6 +248,5 @@ client.on(Events.InteractionCreate, async (interaction) => {
     await runChannelImport(interaction, { flat: true });
   }
 });
-});
 
 client.login(TOKEN);
