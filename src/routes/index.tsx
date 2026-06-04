@@ -361,6 +361,7 @@ function Home() {
           setSpinning={setSpinning}
           centerImage={centerImage}
           spinDurationSec={spinDurationSec}
+          locked={showWinner}
         />
         <p className="text-center text-sm text-muted-foreground">
           Total entries:{" "}
