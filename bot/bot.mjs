@@ -57,21 +57,27 @@ const client = new Client({
 const scanCommand = new SlashCommandBuilder()
   .setName("scan")
   .setDescription(
-    "Scan the configured channel and add the first message of each user to the wheel.",
+    "Scan the channel: add the first message per user, applying role weights and Server Booster multipliers.",
+  )
+  .toJSON();
+
+const crawlCommand = new SlashCommandBuilder()
+  .setName("crawl")
+  .setDescription(
+    "Crawl the channel: add the first message per user with exactly 1 entry each (no role/boost multipliers).",
   )
   .toJSON();
 
 async function registerCommands(appId) {
   const rest = new REST({ version: "10" }).setToken(TOKEN);
+  const body = [scanCommand, crawlCommand];
   try {
     if (GUILD_ID) {
-      await rest.put(Routes.applicationGuildCommands(appId, GUILD_ID), {
-        body: [scanCommand],
-      });
-      console.log(`✓ Registered /scan in guild ${GUILD_ID}`);
+      await rest.put(Routes.applicationGuildCommands(appId, GUILD_ID), { body });
+      console.log(`✓ Registered /scan and /crawl in guild ${GUILD_ID}`);
     } else {
-      await rest.put(Routes.applicationCommands(appId), { body: [scanCommand] });
-      console.log("✓ Registered /scan globally (may take up to 1h to appear)");
+      await rest.put(Routes.applicationCommands(appId), { body });
+      console.log("✓ Registered /scan and /crawl globally (may take up to 1h to appear)");
     }
   } catch (err) {
     console.error("Failed to register slash commands:", err);
