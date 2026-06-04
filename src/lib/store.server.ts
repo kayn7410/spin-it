@@ -176,37 +176,52 @@ export function addDiscordEntry(opts: {
   discordUserId: string;
   roles: string[];
   attachmentCount?: number;
+  boostCount?: number;
+  /** When true, ignore role weights & boosts — every user gets exactly 1 entry. */
+  flat?: boolean;
 }): { entry: Entry | null; reason?: string } {
   const data = readData();
-  // Parse the submission format:
-  //   <username>            (boosts optional, defaults to 0)
-  //   <username> +<n> boost(s)
-  // Examples: "kayn", "kayn +2 boosts", "kayn +1 boost"
   const text = (opts.name || "").trim();
   if (text.length > 100) {
     return { entry: null, reason: "too-long" };
   }
-  // Flexible parse: first token = username, optional number anywhere = boosts.
-  // Accepts: "kayn", "kayn 3 boosts", "kayn +3 boosts", "kayn 3+ boosts", "kayn +3", "kayn 3"
   const usernameMatch = text.match(/^@?(\S+)/);
   if (!usernameMatch) {
     return { entry: null, reason: "invalid-format" };
   }
   const twitterName = usernameMatch[1].slice(0, 64);
-  const rest = text.slice(usernameMatch[0].length);
-  const boostMatch = rest.match(/(\d+)/);
-  const boosts = boostMatch ? Math.max(0, parseInt(boostMatch[1], 10) || 0) : 0;
   if (!twitterName) {
     return { entry: null, reason: "invalid-format" };
   }
   if (data.entries.some((e) => e.discordUserId === opts.discordUserId)) {
     return { entry: null, reason: "duplicate-user" };
   }
+
+  // /crawl mode — flat 1 entry per user, ignore all roles/boosts/image bonuses.
+  if (opts.flat) {
+    const entry: Entry = {
+      id: uid(),
+      name: twitterName,
+      weight: 1,
+      source: "discord",
+      discordUserId: opts.discordUserId,
+      discordRole: "crawl",
+      createdAt: Date.now(),
+    };
+    data.entries.push(entry);
+    writeData(data);
+    return { entry };
+  }
+
+  // Boost count: prefer explicit boostCount field, fall back to "+N boosts" in the text.
+  const rest = text.slice(usernameMatch[0].length);
+  const boostMatch = rest.match(/(\d+)/);
+  const parsedBoosts = boostMatch ? Math.max(0, parseInt(boostMatch[1], 10) || 0) : 0;
+  const boosts = typeof opts.boostCount === "number" ? Math.max(0, opts.boostCount) : parsedBoosts;
+
   const normalizedRoles = new Set(
     opts.roles.map((r) => r.trim().toLowerCase()).filter(Boolean),
   );
-  // Find the highest-weight role the user has (matching configured roleWeights
-  // by name, case-insensitive). Fallback to @everyone weight.
   let everyoneWeight = 1;
   let boosterWeight = 0;
   let bestWeight = 0;
@@ -226,11 +241,10 @@ export function addDiscordEntry(opts: {
     }
   }
   const hasBooster = normalizedRoles.has("server booster");
-  // For Server Booster: multiplier = boosts if specified (>0), else 1.
+  // Server Booster role-weight is MULTIPLIED by the user's boost count.
+  // If user is boosting but boostCount unknown, treat as 1.
   const boosterMultiplier = hasBooster ? Math.max(1, boosts) : 0;
   const boosterTotal = boosterWeight * boosterMultiplier;
-  // Sum @everyone + highest specific role + booster bonus (booster role
-  // contributes separately so users with multiple roles get their entries added).
   let totalEntries = everyoneWeight;
   const roleLabels: string[] = ["@everyone"];
   if (bestRoleName) {
