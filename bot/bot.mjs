@@ -57,21 +57,27 @@ const client = new Client({
 const scanCommand = new SlashCommandBuilder()
   .setName("scan")
   .setDescription(
-    "Scan the configured channel and add the first message of each user to the wheel.",
+    "Scan the channel: add the first message per user, applying role weights and Server Booster multipliers.",
+  )
+  .toJSON();
+
+const crawlCommand = new SlashCommandBuilder()
+  .setName("crawl")
+  .setDescription(
+    "Crawl the channel: add the first message per user with exactly 1 entry each (no role/boost multipliers).",
   )
   .toJSON();
 
 async function registerCommands(appId) {
   const rest = new REST({ version: "10" }).setToken(TOKEN);
+  const body = [scanCommand, crawlCommand];
   try {
     if (GUILD_ID) {
-      await rest.put(Routes.applicationGuildCommands(appId, GUILD_ID), {
-        body: [scanCommand],
-      });
-      console.log(`✓ Registered /scan in guild ${GUILD_ID}`);
+      await rest.put(Routes.applicationGuildCommands(appId, GUILD_ID), { body });
+      console.log(`✓ Registered /scan and /crawl in guild ${GUILD_ID}`);
     } else {
-      await rest.put(Routes.applicationCommands(appId), { body: [scanCommand] });
-      console.log("✓ Registered /scan globally (may take up to 1h to appear)");
+      await rest.put(Routes.applicationCommands(appId), { body });
+      console.log("✓ Registered /scan and /crawl globally (may take up to 1h to appear)");
     }
   } catch (err) {
     console.error("Failed to register slash commands:", err);
@@ -105,7 +111,34 @@ async function fetchAllMessages(channel) {
   return all;
 }
 
-async function submitMessage(msg) {
+/**
+ * Build a map of userId -> { isBoosting, boostCount } for every member of the guild.
+ *
+ * NOTE: Discord's API does not expose a precise per-user boost count. We use
+ * `premiumSinceTimestamp` to know whether a member is currently boosting and
+ * count them as 1 boost. (Nitro members can boost up to 2x, but that isn't
+ * surfaced via the API.) Anyone with the "Server Booster" role but no
+ * premium_since (e.g. role granted manually) is also counted as 1.
+ */
+async function buildBoostMap(guild) {
+  const map = new Map();
+  try {
+    const members = await guild.members.fetch();
+    for (const m of members.values()) {
+      const isBoosting = !!m.premiumSinceTimestamp;
+      const hasBoosterRole = m.roles?.cache?.some(
+        (r) => r.name.toLowerCase() === "server booster",
+      );
+      const boostCount = isBoosting || hasBoosterRole ? 1 : 0;
+      map.set(m.id, { isBoosting: isBoosting || !!hasBoosterRole, boostCount });
+    }
+  } catch (err) {
+    console.warn("  could not fetch guild members for boost info:", err.message);
+  }
+  return map;
+}
+
+async function submitMessage(msg, { flat = false, boostInfo = null } = {}) {
   const name = (msg.content || "").trim();
   if (!name) return { skipped: "empty" };
 
@@ -124,14 +157,18 @@ async function submitMessage(msg) {
       }).length
     : 0;
 
+  const boostCount = boostInfo?.boostCount ?? 0;
+
   const res = await fetch(`${API_URL}/api/discord/submit`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       name: name.slice(0, 500),
       discordUserId: msg.author.id,
-      roles: roleNames,
-      attachmentCount,
+      roles: flat ? [] : roleNames,
+      attachmentCount: flat ? 0 : attachmentCount,
+      boostCount: flat ? 0 : boostCount,
+      flat,
     }),
   });
   const data = await res.json().catch(() => ({}));
@@ -139,12 +176,9 @@ async function submitMessage(msg) {
   return { skipped: data.reason || `http-${res.status}` };
 }
 
-client.on(Events.InteractionCreate, async (interaction) => {
-  if (!interaction.isChatInputCommand()) return;
-  if (interaction.commandName !== "scan") return;
-
+async function runChannelImport(interaction, { flat }) {
+  const label = flat ? "/crawl" : "/scan";
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
   try {
     const channel = await client.channels.fetch(CHANNEL_ID).catch(() => null);
     if (!channel || !channel.isTextBased()) {
@@ -154,11 +188,20 @@ client.on(Events.InteractionCreate, async (interaction) => {
       return;
     }
 
-    console.log(`/scan invoked by ${interaction.user.tag}`);
+    console.log(`${label} invoked by ${interaction.user.tag}`);
+
+    // For /scan: collect boost info for every guild member first.
+    let boostMap = new Map();
+    if (!flat && channel.guild) {
+      console.log("  collecting member boost info…");
+      boostMap = await buildBoostMap(channel.guild);
+      const boosting = [...boostMap.values()].filter((b) => b.isBoosting).length;
+      console.log(`  ${boosting} boosting member(s) detected`);
+    }
+
     const messages = await fetchAllMessages(channel);
     console.log(`  fetched ${messages.length} messages`);
 
-    // Keep only the first (earliest) message per non-bot user.
     const firstByUser = new Map();
     for (const m of messages) {
       if (m.author.bot) continue;
@@ -169,7 +212,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
     let skipped = 0;
     const reasons = {};
     for (const m of firstByUser.values()) {
-      const result = await submitMessage(m);
+      const result = await submitMessage(m, {
+        flat,
+        boostInfo: boostMap.get(m.author.id) ?? null,
+      });
       if (result.added) {
         added++;
       } else {
@@ -182,15 +228,24 @@ client.on(Events.InteractionCreate, async (interaction) => {
       .map(([k, v]) => `${k}: ${v}`)
       .join(", ");
     await interaction.editReply(
-      `Scan complete. Scanned ${messages.length} messages from ${firstByUser.size} unique users.\n` +
+      `${flat ? "Crawl" : "Scan"} complete. Processed ${messages.length} messages from ${firstByUser.size} unique users.\n` +
         `Added: **${added}** · Skipped: **${skipped}**${reasonStr ? ` (${reasonStr})` : ""}`,
     );
     console.log(`  added=${added} skipped=${skipped} ${reasonStr}`);
   } catch (err) {
-    console.error("Scan error:", err);
+    console.error(`${label} error:`, err);
     await interaction
-      .editReply(`Scan failed: ${err.message || "unknown error"}`)
+      .editReply(`${label} failed: ${err.message || "unknown error"}`)
       .catch(() => {});
+  }
+}
+
+client.on(Events.InteractionCreate, async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+  if (interaction.commandName === "scan") {
+    await runChannelImport(interaction, { flat: false });
+  } else if (interaction.commandName === "crawl") {
+    await runChannelImport(interaction, { flat: true });
   }
 });
 

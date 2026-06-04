@@ -12,6 +12,8 @@ type Props = {
   centerImage?: string;
   /** Spin animation duration in seconds (default 5). */
   spinDurationSec?: number;
+  /** When true, wheel freezes on the current rotation (used while winner dialog is open). */
+  locked?: boolean;
 };
 
 const SLICE_COLORS = [
@@ -25,7 +27,6 @@ const SLICE_COLORS = [
   "var(--wheel-8)",
 ];
 
-// Idle drift: slow continuous rotation while not spinning (deg/sec).
 const IDLE_DEG_PER_SEC = 8;
 const FONT_STACK = `ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
 const MAX_LABEL_LENGTH = 18;
@@ -57,7 +58,7 @@ function textFits(
   sliceRadians: number,
 ) {
   if (!text) return true;
-  ctx.font = `${fontSize}px ${FONT_STACK}`;
+  ctx.font = `900 ${fontSize}px ${FONT_STACK}`;
   const width = ctx.measureText(` ${shortenWheelText(text)} `).width;
   return boxFits(sliceRadians / 2, outerRadius, innerRadius, width, fontSize + Math.max(4, fontSize * 0.18));
 }
@@ -111,17 +112,31 @@ function fontSizeForSlice(
   return stops[0];
 }
 
-export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, spinDurationSec = 5 }: Props) {
-  const [rotation, setRotation] = useState(0);
-  const [transitioning, setTransitioning] = useState(false);
+type Mode = "idle" | "spinning" | "locked";
+
+export function Wheel({
+  entries,
+  onResult,
+  spinning,
+  setSpinning,
+  centerImage,
+  spinDurationSec = 5,
+  locked = false,
+}: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const [canvasSize, setCanvasSize] = useState(500);
-  const rafRef = useRef<number | null>(null);
-  const lastTickRef = useRef<number>(0);
   const rotationRef = useRef(0);
+  const modeRef = useRef<Mode>("idle");
+  const spinStateRef = useRef<{
+    start: number;
+    from: number;
+    to: number;
+    duration: number;
+    winnerIdx: number;
+  } | null>(null);
+  const centerImgRef = useRef<HTMLImageElement | null>(null);
 
-  // Build weighted slices
   const slices = useMemo(() => {
     const totalWeight = entries.reduce((s, e) => s + e.weight, 0);
     if (totalWeight === 0) return [];
@@ -139,28 +154,13 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
     });
   }, [entries]);
 
-  // Idle slow drift via requestAnimationFrame (only when not spinning).
+  // Sync external locked/spinning into mode.
   useEffect(() => {
-    rotationRef.current = rotation;
-  }, [rotation]);
+    if (spinning) return;
+    modeRef.current = locked ? "locked" : "idle";
+  }, [locked, spinning]);
 
-  useEffect(() => {
-    if (spinning || transitioning || slices.length === 0) return;
-    lastTickRef.current = performance.now();
-    const step = (now: number) => {
-      const dt = (now - lastTickRef.current) / 1000;
-      lastTickRef.current = now;
-      rotationRef.current += IDLE_DEG_PER_SEC * dt;
-      setRotation(rotationRef.current);
-      rafRef.current = requestAnimationFrame(step);
-    };
-    rafRef.current = requestAnimationFrame(step);
-    return () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      rafRef.current = null;
-    };
-  }, [spinning, transitioning, slices.length]);
-
+  // Track canvas size.
   useEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
@@ -174,63 +174,95 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
     return () => observer.disconnect();
   }, []);
 
+  // Load center image.
+  useEffect(() => {
+    if (!centerImage) {
+      centerImgRef.current = null;
+      return;
+    }
+    const img = new Image();
+    img.src = centerImage;
+    img.onload = () => {
+      centerImgRef.current = img;
+    };
+  }, [centerImage]);
+
+  // Main render + animation loop (rotation is applied via canvas transforms — no blurry CSS rotate).
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || slices.length === 0) return;
-    const ctx = canvas.getContext("2d");
+    const ctx = canvas.getContext("2d", { alpha: true });
     if (!ctx) return;
 
-    let cancelled = false;
-    let centerImg: HTMLImageElement | null = null;
+    // Configure backing buffer once per size change (crisp rendering).
+    const dpr = Math.min(3, Math.max(1, window.devicePixelRatio || 1));
+    const cssSize = canvasSize;
+    canvas.width = Math.round(cssSize * dpr);
+    canvas.height = Math.round(cssSize * dpr);
+    canvas.style.width = `${cssSize}px`;
+    canvas.style.height = `${cssSize}px`;
 
-    const draw = () => {
-      if (cancelled) return;
-      const dpr = window.devicePixelRatio || 1;
-      const cssSize = canvasSize;
-      canvas.width = Math.round(cssSize * dpr);
-      canvas.height = Math.round(cssSize * dpr);
-      canvas.style.width = "100%";
-      canvas.style.height = "100%";
+    const cx = cssSize / 2;
+    const cy = cssSize / 2;
+    const radius = cssSize * 0.48;
+    const borderWidth = Math.max(2, cssSize * 0.006);
+    const lineWidth = Math.max(1.5, cssSize * 0.004);
+    const hubRadius = cssSize * 0.12;
+    const labelOuterRadius = radius - Math.max(8, cssSize * 0.018);
+    const labelInnerRadius = hubRadius + Math.max(10, cssSize * 0.022);
+
+    const allTexts = slices.map((s) => (s.entry.name || "—").trim());
+    const fontSizeCache = new Map<string, number>();
+    // Precompute font sizes (need a transform-aware ctx for measureText — use base dpr setup).
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const getFontSize = (text: string, sweep: number) => {
+      const key = `${text}\u0000${sweep.toFixed(6)}`;
+      const cached = fontSizeCache.get(key);
+      if (cached) return cached;
+      const size = Math.min(
+        fontSizeForSlice(ctx, text, allTexts, labelOuterRadius, labelInnerRadius, sweep),
+        Math.min(34, cssSize * 0.062),
+      );
+      fontSizeCache.set(key, size);
+      return size;
+    };
+
+    const cardColor = getCssColor("--card", "#111827");
+    const primaryColor = getCssColor("--primary", "#60a5fa");
+    const labelColor = getCssColor("--wheel-label", "#ffffff");
+    const labelStrokeColor = getCssColor("--wheel-label-stroke", "#111827");
+    const resolvedSliceColors = slices.map((s) =>
+      s.color.startsWith("var(") ? getCssColor(s.color.slice(4, -1), "#7c3aed") : s.color,
+    );
+
+    const draw = (rotationDeg: number) => {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
       ctx.clearRect(0, 0, cssSize, cssSize);
 
-      const cx = cssSize / 2;
-      const cy = cssSize / 2;
-      const radius = cssSize * 0.48;
-      const borderWidth = Math.max(2, cssSize * 0.006);
-      const lineWidth = Math.max(1.5, cssSize * 0.004);
-      const hubRadius = cssSize * 0.12;
-      const labelOuterRadius = radius - Math.max(8, cssSize * 0.018);
-      const labelInnerRadius = hubRadius + Math.max(10, cssSize * 0.022);
-      const allTexts = slices.map((s) => (s.entry.name || "—").trim());
-      const fontSizeCache = new Map<string, number>();
-      const getFontSize = (text: string, sweep: number) => {
-        const key = `${text}\u0000${sweep.toFixed(6)}`;
-        const cached = fontSizeCache.get(key);
-        if (cached) return cached;
-        const size = Math.min(
-          fontSizeForSlice(ctx, text, allTexts, labelOuterRadius, labelInnerRadius, sweep),
-          Math.min(34, cssSize * 0.062),
-        );
-        fontSizeCache.set(key, size);
-        return size;
-      };
+      // Rotate the wheel (NOT the canvas element) — keeps text crisp.
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate((rotationDeg * Math.PI) / 180);
+      ctx.translate(-cx, -cy);
 
       ctx.beginPath();
       ctx.arc(cx, cy, radius + borderWidth * 2, 0, Math.PI * 2);
-      ctx.fillStyle = getCssColor("--card", "#111827");
+      ctx.fillStyle = cardColor;
       ctx.fill();
 
-      for (const s of slices) {
+      for (let i = 0; i < slices.length; i++) {
+        const s = slices[i];
         const start = ((s.startAngle - 90) * Math.PI) / 180;
         const end = ((s.endAngle - 90) * Math.PI) / 180;
         ctx.beginPath();
         ctx.moveTo(cx, cy);
         ctx.arc(cx, cy, radius, start, end);
         ctx.closePath();
-        ctx.fillStyle = s.color.startsWith("var(") ? getCssColor(s.color.slice(4, -1), "#7c3aed") : s.color;
+        ctx.fillStyle = resolvedSliceColors[i];
         ctx.fill();
-        ctx.strokeStyle = getCssColor("--card", "#111827");
+        ctx.strokeStyle = cardColor;
         ctx.lineWidth = lineWidth;
         ctx.stroke();
       }
@@ -238,8 +270,8 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
       ctx.textBaseline = "middle";
       ctx.textAlign = "end";
       ctx.lineJoin = "round";
-      ctx.strokeStyle = getCssColor("--wheel-label-stroke", "#111827");
-      ctx.fillStyle = getCssColor("--wheel-label", "#ffffff");
+      ctx.strokeStyle = labelStrokeColor;
+      ctx.fillStyle = labelColor;
 
       for (const s of slices) {
         const text = (s.entry.name || "—").trim();
@@ -263,20 +295,24 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
         ctx.translate(cx, cy);
         ctx.rotate(mid);
         ctx.font = `900 ${fontSize}px ${FONT_STACK}`;
-        ctx.lineWidth = Math.max(2, fontSize * 0.16);
+        ctx.lineWidth = Math.max(2, fontSize * 0.18);
         ctx.strokeText(displayText, labelOuterRadius, 0);
         ctx.fillText(displayText, labelOuterRadius, 0);
         ctx.restore();
       }
 
+      ctx.restore();
+
+      // Hub + center image are NOT rotated — they stay still in the middle.
       ctx.beginPath();
       ctx.arc(cx, cy, hubRadius, 0, Math.PI * 2);
-      ctx.fillStyle = getCssColor("--card", "#111827");
+      ctx.fillStyle = cardColor;
       ctx.fill();
-      ctx.strokeStyle = getCssColor("--primary", "#60a5fa");
+      ctx.strokeStyle = primaryColor;
       ctx.lineWidth = Math.max(4, cssSize * 0.008);
       ctx.stroke();
 
+      const centerImg = centerImgRef.current;
       if (centerImg?.complete && centerImg.naturalWidth > 0) {
         const r = hubRadius - Math.max(4, cssSize * 0.008);
         ctx.save();
@@ -291,22 +327,40 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
       }
     };
 
-    if (centerImage) {
-      centerImg = new Image();
-      centerImg.onload = draw;
-      centerImg.src = centerImage;
-    }
-    draw();
-
-    return () => {
-      cancelled = true;
+    let raf = 0;
+    let last = performance.now();
+    const tick = (now: number) => {
+      const dt = (now - last) / 1000;
+      last = now;
+      if (modeRef.current === "idle") {
+        rotationRef.current += IDLE_DEG_PER_SEC * dt;
+      } else if (modeRef.current === "spinning" && spinStateRef.current) {
+        const s = spinStateRef.current;
+        const t = Math.min(1, (now - s.start) / s.duration);
+        const eased = 1 - Math.pow(1 - t, 4); // ease-out
+        rotationRef.current = s.from + (s.to - s.from) * eased;
+        if (t >= 1) {
+          const finishedIdx = s.winnerIdx;
+          spinStateRef.current = null;
+          modeRef.current = "locked";
+          setSpinning(false);
+          playWinnerFanfare();
+          onResult(entries[finishedIdx]);
+        }
+      }
+      draw(rotationRef.current);
+      raf = requestAnimationFrame(tick);
     };
-  }, [canvasSize, centerImage, slices]);
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+    // entries/onResult/setSpinning intentionally referenced via closure — re-bind only when wheel geometry changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canvasSize, slices]);
 
   function spin() {
-    if (spinning || transitioning || slices.length === 0) return;
+    if (spinning || modeRef.current === "spinning" || slices.length === 0) return;
+    if (locked) return;
     setSpinning(true);
-    setTransitioning(true);
     const totalWeight = entries.reduce((s, e) => s + e.weight, 0);
     let r = Math.random() * totalWeight;
     let winnerIdx = 0;
@@ -320,22 +374,20 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
     const slice = slices[winnerIdx];
     const targetAngle = (slice.startAngle + slice.endAngle) / 2;
     const spins = 6 + Math.floor(Math.random() * 3);
-    // Normalize current rotation, build a forward target.
     const current = rotationRef.current;
     const currentMod = ((current % 360) + 360) % 360;
     const desired = (360 - targetAngle) % 360;
     const delta = ((desired - currentMod) + 360) % 360;
     const jitter = (Math.random() - 0.5) * ((slice.endAngle - slice.startAngle) * 0.4);
-    const newRotation = current + spins * 360 + delta + jitter;
-    rotationRef.current = newRotation;
-    setRotation(newRotation);
-
-    setTimeout(() => {
-      setSpinning(false);
-      setTransitioning(false);
-      playWinnerFanfare();
-      onResult(entries[winnerIdx]);
-    }, spinDurationSec * 1000 + 200);
+    const target = current + spins * 360 + delta + jitter;
+    spinStateRef.current = {
+      start: performance.now(),
+      from: current,
+      to: target,
+      duration: spinDurationSec * 1000,
+      winnerIdx,
+    };
+    modeRef.current = "spinning";
   }
 
   if (slices.length === 0) {
@@ -355,7 +407,6 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
       className="relative aspect-square shrink-0"
       style={{ width: "min(94vw, calc(100dvh - 128px), 920px)", maxWidth: "100%" }}
     >
-      {/* Pointer */}
       <div
         className="absolute left-1/2 top-0 z-10 h-0 w-0 -translate-x-1/2 -translate-y-2"
         style={{
@@ -368,20 +419,13 @@ export function Wheel({ entries, onResult, spinning, setSpinning, centerImage, s
       />
       <canvas
         ref={canvasRef}
-        className="absolute inset-0 block h-full w-full drop-shadow-2xl"
-        style={{
-          transform: `rotate(${rotation}deg)`,
-          transformOrigin: "50% 50%",
-          transition: transitioning
-            ? `transform ${spinDurationSec}s cubic-bezier(0.17, 0.67, 0.21, 1)`
-            : "none",
-        }}
+        className="absolute left-0 top-0 block drop-shadow-2xl"
         aria-label="Giveaway wheel"
       />
 
       <button
         onClick={spin}
-        disabled={spinning}
+        disabled={spinning || locked}
         className={cn(
           "absolute left-1/2 top-1/2 z-20 -translate-x-1/2 -translate-y-1/2 rounded-full",
           "h-20 w-20 font-bold text-base shadow-lg",

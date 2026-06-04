@@ -13,6 +13,8 @@ const Schema = z.object({
   discordUserId: z.string().min(1).max(64),
   roles: z.array(z.string().min(1).max(100)).max(50),
   attachmentCount: z.number().int().min(0).max(50).optional(),
+  boostCount: z.number().int().min(0).max(50).optional(),
+  flat: z.boolean().optional(),
 });
 
 export const Route = createFileRoute("/api/discord/submit")({
