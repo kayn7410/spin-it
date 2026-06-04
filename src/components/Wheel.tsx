@@ -419,8 +419,7 @@ export function Wheel({
       />
       <canvas
         ref={canvasRef}
-        className="absolute inset-0 block drop-shadow-2xl"
-        style={{ margin: "auto" }}
+        className="absolute left-0 top-0 block drop-shadow-2xl"
         aria-label="Giveaway wheel"
       />
 
