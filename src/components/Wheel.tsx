@@ -187,14 +187,16 @@ export function Wheel({
     };
   }, [centerImage]);
 
-  // Main render + animation loop (rotation is applied via canvas transforms — no blurry CSS rotate).
+  // Pre-render the wheel (slices + labels) to an offscreen canvas.
+  // The main loop only rotates+blits this bitmap → no per-frame text rasterization → no flicker.
+  const offscreenRef = useRef<HTMLCanvasElement | null>(null);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || slices.length === 0) return;
     const ctx = canvas.getContext("2d", { alpha: true });
     if (!ctx) return;
 
-    // Configure backing buffer once per size change (crisp rendering).
     const dpr = Math.min(3, Math.max(1, window.devicePixelRatio || 1));
     const cssSize = canvasSize;
     canvas.width = Math.round(cssSize * dpr);
@@ -211,22 +213,6 @@ export function Wheel({
     const labelOuterRadius = radius - Math.max(8, cssSize * 0.018);
     const labelInnerRadius = hubRadius + Math.max(10, cssSize * 0.022);
 
-    const allTexts = slices.map((s) => (s.entry.name || "—").trim());
-    const fontSizeCache = new Map<string, number>();
-    // Precompute font sizes (need a transform-aware ctx for measureText — use base dpr setup).
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const getFontSize = (text: string, sweep: number) => {
-      const key = `${text}\u0000${sweep.toFixed(6)}`;
-      const cached = fontSizeCache.get(key);
-      if (cached) return cached;
-      const size = Math.min(
-        fontSizeForSlice(ctx, text, allTexts, labelOuterRadius, labelInnerRadius, sweep),
-        Math.min(34, cssSize * 0.062),
-      );
-      fontSizeCache.set(key, size);
-      return size;
-    };
-
     const cardColor = getCssColor("--card", "#111827");
     const primaryColor = getCssColor("--primary", "#60a5fa");
     const labelColor = getCssColor("--wheel-label", "#ffffff");
@@ -235,75 +221,102 @@ export function Wheel({
       s.color.startsWith("var(") ? getCssColor(s.color.slice(4, -1), "#7c3aed") : s.color,
     );
 
+    // Build the offscreen wheel bitmap (unrotated, full size with DPR).
+    const off = document.createElement("canvas");
+    off.width = canvas.width;
+    off.height = canvas.height;
+    const offCtx = off.getContext("2d", { alpha: true })!;
+    offCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    offCtx.imageSmoothingEnabled = true;
+    offCtx.imageSmoothingQuality = "high";
+
+    // Background disc
+    offCtx.beginPath();
+    offCtx.arc(cx, cy, radius + borderWidth * 2, 0, Math.PI * 2);
+    offCtx.fillStyle = cardColor;
+    offCtx.fill();
+
+    // Slices
+    for (let i = 0; i < slices.length; i++) {
+      const s = slices[i];
+      const start = ((s.startAngle - 90) * Math.PI) / 180;
+      const end = ((s.endAngle - 90) * Math.PI) / 180;
+      offCtx.beginPath();
+      offCtx.moveTo(cx, cy);
+      offCtx.arc(cx, cy, radius, start, end);
+      offCtx.closePath();
+      offCtx.fillStyle = resolvedSliceColors[i];
+      offCtx.fill();
+      offCtx.strokeStyle = cardColor;
+      offCtx.lineWidth = lineWidth;
+      offCtx.stroke();
+    }
+
+    // Labels (computed once)
+    const allTexts = slices.map((s) => (s.entry.name || "—").trim());
+    const fontSizeCache = new Map<string, number>();
+    const getFontSize = (text: string, sweep: number) => {
+      const key = `${text}\u0000${sweep.toFixed(6)}`;
+      const cached = fontSizeCache.get(key);
+      if (cached) return cached;
+      const size = Math.min(
+        fontSizeForSlice(offCtx, text, allTexts, labelOuterRadius, labelInnerRadius, sweep),
+        Math.min(34, cssSize * 0.062),
+      );
+      fontSizeCache.set(key, size);
+      return size;
+    };
+
+    offCtx.textBaseline = "middle";
+    offCtx.textAlign = "end";
+    offCtx.lineJoin = "round";
+    offCtx.strokeStyle = labelStrokeColor;
+    offCtx.fillStyle = labelColor;
+
+    for (const s of slices) {
+      const text = (s.entry.name || "—").trim();
+      if (!text) continue;
+      const start = ((s.startAngle - 90) * Math.PI) / 180;
+      const end = ((s.endAngle - 90) * Math.PI) / 180;
+      const mid = ((s.startAngle + (s.endAngle - s.startAngle) / 2 - 90) * Math.PI) / 180;
+      const sweep = Math.max(0.0001, end - start);
+      const displayText = ` ${shortenWheelText(text)} `;
+      const fontSize = getFontSize(text, sweep);
+      const clipGap = Math.min(sweep * 0.18, Math.max(0.001, lineWidth / radius));
+      const clipStart = start + clipGap;
+      const clipEnd = end - clipGap;
+
+      offCtx.save();
+      offCtx.beginPath();
+      offCtx.arc(cx, cy, radius - lineWidth / 2, clipStart, clipEnd);
+      offCtx.arc(cx, cy, hubRadius + lineWidth * 2, clipEnd, clipStart, true);
+      offCtx.closePath();
+      offCtx.clip();
+      offCtx.translate(cx, cy);
+      offCtx.rotate(mid);
+      offCtx.font = `900 ${fontSize}px ${FONT_STACK}`;
+      offCtx.lineWidth = Math.max(2, fontSize * 0.18);
+      offCtx.strokeText(displayText, labelOuterRadius, 0);
+      offCtx.fillText(displayText, labelOuterRadius, 0);
+      offCtx.restore();
+    }
+
+    offscreenRef.current = off;
+
     const draw = (rotationDeg: number) => {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = "high";
       ctx.clearRect(0, 0, cssSize, cssSize);
 
-      // Rotate the wheel (NOT the canvas element) — keeps text crisp.
+      // Rotate + blit the pre-rendered wheel
       ctx.save();
       ctx.translate(cx, cy);
       ctx.rotate((rotationDeg * Math.PI) / 180);
-      ctx.translate(-cx, -cy);
-
-      ctx.beginPath();
-      ctx.arc(cx, cy, radius + borderWidth * 2, 0, Math.PI * 2);
-      ctx.fillStyle = cardColor;
-      ctx.fill();
-
-      for (let i = 0; i < slices.length; i++) {
-        const s = slices[i];
-        const start = ((s.startAngle - 90) * Math.PI) / 180;
-        const end = ((s.endAngle - 90) * Math.PI) / 180;
-        ctx.beginPath();
-        ctx.moveTo(cx, cy);
-        ctx.arc(cx, cy, radius, start, end);
-        ctx.closePath();
-        ctx.fillStyle = resolvedSliceColors[i];
-        ctx.fill();
-        ctx.strokeStyle = cardColor;
-        ctx.lineWidth = lineWidth;
-        ctx.stroke();
-      }
-
-      ctx.textBaseline = "middle";
-      ctx.textAlign = "end";
-      ctx.lineJoin = "round";
-      ctx.strokeStyle = labelStrokeColor;
-      ctx.fillStyle = labelColor;
-
-      for (const s of slices) {
-        const text = (s.entry.name || "—").trim();
-        if (!text) continue;
-        const start = ((s.startAngle - 90) * Math.PI) / 180;
-        const end = ((s.endAngle - 90) * Math.PI) / 180;
-        const mid = ((s.startAngle + (s.endAngle - s.startAngle) / 2 - 90) * Math.PI) / 180;
-        const sweep = Math.max(0.0001, end - start);
-        const displayText = ` ${shortenWheelText(text)} `;
-        const fontSize = getFontSize(text, sweep);
-        const clipGap = Math.min(sweep * 0.18, Math.max(0.001, lineWidth / radius));
-        const clipStart = start + clipGap;
-        const clipEnd = end - clipGap;
-
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(cx, cy, radius - lineWidth / 2, clipStart, clipEnd);
-        ctx.arc(cx, cy, hubRadius + lineWidth * 2, clipEnd, clipStart, true);
-        ctx.closePath();
-        ctx.clip();
-        ctx.translate(cx, cy);
-        ctx.rotate(mid);
-        ctx.font = `900 ${fontSize}px ${FONT_STACK}`;
-        ctx.lineWidth = Math.max(2, fontSize * 0.18);
-        ctx.strokeText(displayText, labelOuterRadius, 0);
-        ctx.fillText(displayText, labelOuterRadius, 0);
-        ctx.restore();
-      }
-
+      ctx.drawImage(off, -cx, -cy, cssSize, cssSize);
       ctx.restore();
 
-      // Hub + center image are NOT rotated — they stay still in the middle.
+      // Static hub + center image (unrotated)
       ctx.beginPath();
       ctx.arc(cx, cy, hubRadius, 0, Math.PI * 2);
       ctx.fillStyle = cardColor;
@@ -353,9 +366,9 @@ export function Wheel({
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-    // entries/onResult/setSpinning intentionally referenced via closure — re-bind only when wheel geometry changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canvasSize, slices]);
+
 
   function spin() {
     if (spinning || modeRef.current === "spinning" || slices.length === 0) return;
@@ -419,7 +432,7 @@ export function Wheel({
       />
       <canvas
         ref={canvasRef}
-        className="absolute left-0 top-0 block drop-shadow-2xl"
+        className="absolute left-1/2 top-1/2 block -translate-x-1/2 -translate-y-1/2 drop-shadow-2xl"
         aria-label="Giveaway wheel"
       />
 
