@@ -432,7 +432,7 @@ export function Wheel({
       />
       <canvas
         ref={canvasRef}
-        className="absolute left-0 top-0 block drop-shadow-2xl"
+        className="absolute left-1/2 top-1/2 block -translate-x-1/2 -translate-y-1/2 drop-shadow-2xl"
         aria-label="Giveaway wheel"
       />
 
